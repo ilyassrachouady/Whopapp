@@ -1,0 +1,29 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { completeCall } from "@/lib/calls";
+import { getSession } from "@/lib/supabase";
+export async function POST(request: Request) {
+  try {
+    const result = await completeCall(await request.json());
+    const checkout =
+      result.record.call_outcome === "sold"
+        ? await getSession(result.record.checkout_session_id)
+        : null;
+    return NextResponse.json(
+      { ...result, checkout },
+      { status: result.duplicate ? 200 : 201 },
+    );
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof z.ZodError
+            ? error.issues[0]?.message || "Check the call details."
+            : error instanceof Error
+              ? error.message
+              : "Could not complete this call.",
+      },
+      { status: 400 },
+    );
+  }
+}
