@@ -1,9 +1,9 @@
 "use client";
 import {
   Check,
+  Wallet,
   Clock3,
   CircleX,
-  CalendarX2,
   UserRoundMinus,
   type LucideIcon,
 } from "lucide-react";
@@ -11,9 +11,9 @@ import { outcomeLabels } from "@/lib/call-options";
 import type { CallOutcome } from "@/lib/types";
 const icons: Record<CallOutcome, LucideIcon> = {
   sold: Check,
+  deposit: Wallet,
   follow_up: Clock3,
   no_sale: CircleX,
-  no_show: CalendarX2,
   unqualified: UserRoundMinus,
 };
 export function CallOutcomeSelector({
@@ -26,7 +26,7 @@ export function CallOutcomeSelector({
   return (
     <section className="form-section outcome-section">
       <div className="section-heading">
-        <span className="step">02</span>
+        <span className="step">03</span>
         <h2>Call outcome</h2>
       </div>
       <div className="outcome-options" role="group" aria-label="Call outcome">

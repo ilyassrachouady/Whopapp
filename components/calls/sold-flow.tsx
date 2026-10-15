@@ -5,10 +5,15 @@ import {
   BriefcaseBusiness,
   CreditCard,
 } from "lucide-react";
-import { offers, money, paymentLabels } from "@/lib/config";
-import { calculatePlan } from "@/lib/payments";
+import { money, paymentLabels } from "@/lib/config";
+import {
+  calculatePlan,
+  customFuturePayments,
+  installmentContract,
+} from "@/lib/payments";
 import type { CustomPlan, PaymentPlan, PaymentType } from "@/lib/types";
 interface SoldFlowProps {
+  offers: import("@/lib/types").Offer[];
   offerId: string;
   setOfferId: (value: string) => void;
   paymentType: PaymentType;
@@ -20,6 +25,7 @@ interface SoldFlowProps {
   change: () => void;
 }
 export function SoldFlow({
+  offers,
   offerId,
   setOfferId,
   paymentType,
@@ -31,11 +37,31 @@ export function SoldFlow({
   change,
 }: SoldFlowProps) {
   const offer = offers.find((o) => o.id === offerId)!;
+  const contract = installmentContract(offer);
+  let futurePayments: number[] = [];
+  if (paymentType === "custom") {
+    try {
+      futurePayments = customFuturePayments(
+        contract,
+        custom.dueToday,
+        custom.remainingPayments,
+      );
+    } catch {
+      futurePayments = [];
+    }
+  }
+  const futureAmounts = [...new Set(futurePayments)];
+  const futureLabel =
+    futureAmounts.length === 1
+      ? (futureAmounts[0] / 100).toFixed(2)
+      : futureAmounts.length
+        ? `${(Math.min(...futureAmounts) / 100).toFixed(2)} – ${(Math.max(...futureAmounts) / 100).toFixed(2)}`
+        : "";
   return (
     <>
       <section className="form-section">
         <div className="section-heading">
-          <span className="step">03</span>
+          <span className="step">04</span>
           <h2>Choose an offer</h2>
         </div>
         <div className="offer-grid">
@@ -83,7 +109,7 @@ export function SoldFlow({
       </section>
       <section className="form-section">
         <div className="section-heading">
-          <span className="step">04</span>
+          <span className="step">05</span>
           <h2>Payment structure</h2>
         </div>
         <div className="payment-grid">
@@ -108,9 +134,21 @@ export function SoldFlow({
               </strong>
               <small>
                 {type === "custom"
-                  ? "Set your terms"
-                  : `${money(calculatePlan(offer.price, type).amountDueToday)} ${type === "pif" ? "today" : "/ payment"}`}
+                  ? "Future payments calculate automatically"
+                  : type === "pif"
+                    ? `${money(calculatePlan(offer, type).amountDueToday)} today`
+                    : `${calculatePlan(offer, type).paymentCount} × ${money(calculatePlan(offer, type).amountDueToday)}`}
               </small>
+              {type !== "pif" && (
+                <small>
+                  Total:{" "}
+                  {money(
+                    type === "custom"
+                      ? contract
+                      : calculatePlan(offer, type).contractValue,
+                  )}
+                </small>
+              )}
             </button>
           ))}
         </div>
@@ -124,10 +162,18 @@ export function SoldFlow({
                 step="0.01"
                 value={custom.dueToday / 100}
                 onChange={(e) => {
-                  setCustom({
-                    ...custom,
-                    dueToday: Math.round(Number(e.target.value) * 100),
-                  });
+                  const dueToday = Math.round(Number(e.target.value) * 100);
+                  let futureAmount = custom.futureAmount;
+                  try {
+                    futureAmount = customFuturePayments(
+                      contract,
+                      dueToday,
+                      custom.remainingPayments,
+                    )[0];
+                  } catch {
+                    futureAmount = custom.futureAmount;
+                  }
+                  setCustom({ ...custom, dueToday, futureAmount });
                   change();
                 }}
               />
@@ -140,10 +186,18 @@ export function SoldFlow({
                 max="24"
                 value={custom.remainingPayments}
                 onChange={(e) => {
-                  setCustom({
-                    ...custom,
-                    remainingPayments: Number(e.target.value),
-                  });
+                  const remainingPayments = Number(e.target.value);
+                  let futureAmount = custom.futureAmount;
+                  try {
+                    futureAmount = customFuturePayments(
+                      contract,
+                      custom.dueToday,
+                      remainingPayments,
+                    )[0];
+                  } catch {
+                    futureAmount = custom.futureAmount;
+                  }
+                  setCustom({ ...custom, remainingPayments, futureAmount });
                   change();
                 }}
               />
@@ -151,18 +205,12 @@ export function SoldFlow({
             <label>
               Future payment amount ($)
               <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                value={custom.futureAmount / 100}
-                onChange={(e) => {
-                  setCustom({
-                    ...custom,
-                    futureAmount: Math.round(Number(e.target.value) * 100),
-                  });
-                  change();
-                }}
+                readOnly
+                aria-readonly="true"
+                value={futureLabel}
+                tabIndex={-1}
               />
+              <span>Calculated from the {money(contract)} total.</span>
             </label>
             <label>
               First future payment
@@ -188,8 +236,8 @@ export function SoldFlow({
                 {plan.installments.slice(1).map(money).join(" + ")}
                 {plan.firstDate
                   ? ` starting ${plan.firstDate}`
-                  : ", billed monthly"}
-                . No interest added.
+                  : ", every 30 days"}
+                .
               </span>
             )}
           </div>

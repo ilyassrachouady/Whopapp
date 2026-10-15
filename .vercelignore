@@ -1,0 +1,10 @@
+.env*
+.ghl/
+.data/
+.git/
+scripts/
+tests/
+node_modules/
+.next/
+*.png
+*.tsbuildinfo

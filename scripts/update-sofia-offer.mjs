@@ -1,0 +1,15 @@
+import { WhopClient } from '@whop/sdk';
+import { createClient } from '@supabase/supabase-js';
+import { readFile, writeFile } from 'node:fs/promises';
+const client = new WhopClient({ token: process.env.WHOP_API_KEY, baseUrl: 'https://api.whop.com/api/v1' });
+const source = await client.plans.retrieve({ id: 'plan_TbLp2WEa6SUvt' });
+if (source.account?.id !== process.env.WHOP_COMPANY_ID || source.product?.id !== 'prod_SMkECC3LYeqYE' || source.initial_price_due.amount !== '3497.00' || source.currency !== 'usd' || source.plan_type !== 'one_time') throw Error('Unexpected source product/price');
+const plan = await client.plans.create({ account_id: process.env.WHOP_COMPANY_ID, product_id: source.product.id, title: 'Sofia 1:1 - Payment Desk', currency: 'usd', plan_type: 'one_time', initial_price: 3497, renewal_price: 0, override_tax_type: 'inclusive', visibility: 'hidden', release_method: 'buy_now', payment_method_configuration: { enabled: ["card", "bank_wire"], disabled: [], include_platform_defaults: false }, metadata: { source: 'payment_desk', offer_payment: 'sofia:pif', replaces: 'plan_mZaXL4LAeBtWX' } }, { headers: { 'Idempotency-Key': 'payment-desk-sofia-3497-product-SMkECC3LYeqYE-v1' } });
+const verified = await client.plans.retrieve({id:plan.id});
+if(verified.product?.id!==source.product.id || verified.initial_price_due.amount!=='3497.00' || (verified.collect_tax && verified.tax_type!=='inclusive')) throw Error('Plan verification failed');
+const db=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{db:{schema:process.env.SUPABASE_SCHEMA||'payment_desk'},auth:{persistSession:false}});
+const {error}=await db.from('offers').update({name:'Sofia 1:1',price:349700}).eq('id','sofia');if(error)throw error;
+const {data,error:readError}=await db.from('offers').select('id,name,price').eq('id','sofia').single();if(readError||Number(data.price)!==349700)throw Error('Offer price readback failed');
+const mapping=JSON.parse(await readFile('.data/production-plan-map.json','utf8'));mapping['sofia:pif']=plan.id;await writeFile('.data/production-plan-map.json',JSON.stringify(mapping,null,2));
+await writeFile('.data/sofia-offer-update.json',JSON.stringify({planId:plan.id,productId:source.product.id,priceCents:349700,sourcePlanId:source.id,offer:data},null,2));
+console.log(JSON.stringify({planId:plan.id,productId:verified.product.id,price:verified.initial_price_due.amount,taxType:verified.tax_type,paymentMethods:verified.effective_payment_method_configuration,offer:data}));

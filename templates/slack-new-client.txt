@@ -1,0 +1,11 @@
+NEW CLIENT · PAYMENT CONFIRMED
+
+*{{contact.name}}*
+{{inboundWebhookRequest.offer_name}}
+
+*Received:* {{inboundWebhookRequest.currency}} {{inboundWebhookRequest.amount_paid}}
+*Closer:* {{inboundWebhookRequest.closer_name}}
+*Email:* {{contact.email}}
+
+<https://app.gohighlevel.com/v2/location/WgeDf11I8yBah6LRzZL1/contacts/detail/{{contact.id}}|View customer in GHL>
+Payment reference: `{{inboundWebhookRequest.whop_payment_id}}`

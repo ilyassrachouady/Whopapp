@@ -6,6 +6,29 @@ export const offers: Offer[] = [
     name: "Coaching Program",
     slug: "coaching-program",
     price: 199700,
+    paymentOptions: {
+      pif: {
+        total: 199700,
+        installments: 1,
+        installmentAmount: 199700,
+        whopPlanId: null,
+        whopCheckoutId: null,
+      },
+      two: {
+        total: 240000,
+        installments: 2,
+        installmentAmount: 120000,
+        whopPlanId: null,
+        whopCheckoutId: null,
+      },
+      three: {
+        total: 240000,
+        installments: 3,
+        installmentAmount: 80000,
+        whopPlanId: null,
+        whopCheckoutId: null,
+      },
+    },
     badge: "CORE OFFER",
     description: "Your complete coaching program.",
   },
@@ -13,7 +36,9 @@ export const offers: Offer[] = [
     id: "sofia",
     name: "Sofia 1:1",
     slug: "sofia-1-on-1",
-    price: 499700,
+    price: 349700,
+    whopProductId: "prod_SMkECC3LYeqYE",
+    enableCardCheckout: true,
     badge: "PREMIUM",
     description: "Private coaching with Sofia.",
   },
@@ -36,6 +61,7 @@ export const closers: Closer[] = [
 export const prospects: Prospect[] = [
   {
     id: "john",
+    closer_id: "lewis",
     full_name: "John Smith",
     email: "john@example.com",
     phone: "+1 555 123 4567",
@@ -51,6 +77,7 @@ export const prospects: Prospect[] = [
   },
   {
     id: "emma",
+    closer_id: "sofia",
     full_name: "Emma Wilson",
     email: "emma@example.com",
     phone: "+1 555 234 5678",
@@ -66,6 +93,7 @@ export const prospects: Prospect[] = [
   },
   {
     id: "alex",
+    closer_id: "lewis",
     full_name: "Alex Morgan",
     email: "alex@example.com",
     phone: "+1 555 345 6789",
@@ -89,7 +117,7 @@ export const money = (cents: number) =>
   }).format(cents / 100);
 export const paymentLabels = {
   pif: "Pay in Full",
-  two: "2 payments",
-  three: "3 payments",
+  two: "2 Payments",
+  three: "3 Payments",
   custom: "Custom payment plan",
 };

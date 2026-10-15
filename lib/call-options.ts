@@ -1,9 +1,9 @@
-import type { CallDraft, CallOutcome } from "./types";
+import type { CallDraft, CallOutcome, Attendance } from "./types";
 export const outcomeLabels: Record<CallOutcome, string> = {
   sold: "Sold",
+  deposit: "Deposit",
   follow_up: "Follow-up",
   no_sale: "No Sale",
-  no_show: "No Show",
   unqualified: "Unqualified",
 };
 export const followUpReasons = [
@@ -33,13 +33,15 @@ export const unqualifiedReasons = [
   "Other",
 ] as const;
 export const emptyCallDraft = (): CallDraft => ({
+  depositAmount: "",
   followUpDate: "",
   followUpTime: "",
   followUpReason: "",
   nextStep: "",
   notes: "",
   lossReason: "",
-  rescheduleNeeded: true,
+  followUpRequired: false,
+  cancellationReason: "",
 });
 export function schedulePayload(draft: CallDraft) {
   return {
@@ -48,3 +50,16 @@ export function schedulePayload(draft: CallDraft) {
     time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
+
+export const attendanceLabels: Record<Attendance, string> = {
+  attended: "Attended",
+  no_show: "No Show",
+  cancelled: "Cancelled",
+  rescheduled: "Rescheduled",
+};
+export const cancellationReasons = [
+  "Prospect cancelled",
+  "Closer cancelled",
+  "Not ready",
+  "Other",
+] as const;

@@ -1,0 +1,23 @@
+import {readFile} from 'node:fs/promises';
+import {createClient} from '@supabase/supabase-js';
+for(const line of(await readFile('.env.local','utf8')).split('\n')){const m=line.match(/^([A-Z_0-9]+)=(.*)$/);if(m)process.env[m[1]]=m[2].trim().replace(/^(['"])(.*)\1$/,'$2');}
+const origin=process.argv[2]||'http://localhost:3000';
+const client=createClient(process.env.SUPABASE_URL,process.env.SUPABASE_SERVICE_ROLE_KEY,{auth:{persistSession:false,autoRefreshToken:false}});
+const {data:link,error:linkError}=await client.auth.admin.generateLink({type:'magiclink',email:'ilyassrachouady24@gmail.com',options:{redirectTo:'https://whopapp-wine.vercel.app/auth/callback'}});
+if(linkError)throw Error('Supabase test link creation failed: '+linkError.message);
+if(new URL(link.properties.action_link).searchParams.get('redirect_to')!=='https://whopapp-wine.vercel.app/auth/callback')throw Error('Callback not allowlisted');
+const {data,error}=await client.auth.verifyOtp({type:'email',token_hash:link.properties.hashed_token});
+if(error||!data.session)throw Error('Supabase sign-in verification failed');
+const unauth=await fetch(origin+'/api/ghl/contacts?q=ilyass',{redirect:'manual'});if(unauth.status!==401)throw Error('CRM endpoint lacks authentication');
+console.log(JSON.stringify({check:'signed_out_crm_blocked',status:unauth.status}));
+const bad=await fetch(origin+'/api/auth/session',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({access_token:'forged',refresh_token:'forged'})});if(bad.status!==401)throw Error('Forged session accepted');
+console.log(JSON.stringify({check:'forged_session_blocked',status:bad.status}));
+const response=await fetch(origin+'/api/auth/session',{method:'POST',headers:{Origin:origin,'Content-Type':'application/json'},body:JSON.stringify({access_token:data.session.access_token,refresh_token:data.session.refresh_token})});
+if(!response.ok)throw Error('Desk session failed '+response.status);
+const cookie=response.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ');
+const search=await fetch(origin+'/api/ghl/contacts?q=ilyass',{headers:{Cookie:cookie}});const results=await search.json();if(!search.ok||!results.contacts?.some(c=>c.id==='WwyCbpTs098oP8g9A5If'))throw Error('CRM search failed');
+console.log(JSON.stringify({check:'authenticated_crm_search',status:search.status,results:results.contacts.length}));
+const selected=await fetch(origin+'/api/ghl/contacts/select',{method:'POST',headers:{Origin:origin,Cookie:cookie,'Content-Type':'application/json'},body:JSON.stringify({contactId:'WwyCbpTs098oP8g9A5If'})});const contact=await selected.json();if(!selected.ok||contact.prospect?.ghl_contact_id!=='WwyCbpTs098oP8g9A5If')throw Error('Contact selection failed');
+console.log(JSON.stringify({check:'contact_selection_persisted',status:selected.status}));
+const desk=await fetch(origin+'/',{headers:{Cookie:cookie}});if(desk.status!==200)throw Error('Signed-in desk failed');console.log(JSON.stringify({check:'signed_in_desk',status:desk.status}));
+const logout=await fetch(origin+'/api/auth/signout',{method:'POST',headers:{Origin:origin,Cookie:cookie}});if(!logout.ok)throw Error('Signout failed');console.log(JSON.stringify({check:'signout',status:logout.status}));

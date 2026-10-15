@@ -1,12 +1,16 @@
 import { z } from "zod";
+import { recordingUrlSchema } from "./recording";
 import {
   followUpReasons,
   noSaleReasons,
   unqualifiedReasons,
+  cancellationReasons,
 } from "./call-options";
 const base = {
   prospectId: z.string().min(1),
   closerId: z.string().min(1),
+  other_closer_name: z.string().trim().max(100).optional(),
+  recording_url: recordingUrlSchema,
   notes: z.string().trim().max(4000).default(""),
 };
 const schedule = {
@@ -17,36 +21,70 @@ const schedule = {
 export const completeCallSchema = z.union([
   z.object({
     ...base,
-    call_outcome: z.literal("sold"),
+    attendance: z.literal("attended"),
+    outcome: z.literal("deposit"),
+    checkout_session_id: z.uuid(),
+    ...schedule,
+  }),
+  z.object({
+    ...base,
+    attendance: z.literal("attended"),
+    outcome: z.literal("sold"),
     checkout_session_id: z.uuid(),
   }),
   z.object({
     ...base,
-    call_outcome: z.literal("follow_up"),
+    attendance: z.literal("attended"),
+    outcome: z.literal("follow_up"),
     ...schedule,
     follow_up_reason: z.enum(followUpReasons),
     next_step: z.string().trim().min(1, "Enter the next step.").max(1000),
   }),
   z.object({
     ...base,
-    call_outcome: z.literal("no_sale"),
+    attendance: z.literal("attended"),
+    outcome: z.literal("no_sale"),
     loss_reason: z.enum(noSaleReasons),
   }),
   z.object({
     ...base,
-    call_outcome: z.literal("unqualified"),
+    attendance: z.literal("attended"),
+    outcome: z.literal("unqualified"),
     loss_reason: z.enum(unqualifiedReasons),
   }),
   z.object({
     ...base,
-    call_outcome: z.literal("no_show"),
-    reschedule_needed: z.literal(true),
+    attendance: z.literal("no_show"),
+    outcome: z.null(),
+    follow_up_required: z.literal(true),
     ...schedule,
   }),
   z.object({
     ...base,
-    call_outcome: z.literal("no_show"),
-    reschedule_needed: z.literal(false),
+    attendance: z.literal("no_show"),
+    outcome: z.null(),
+    follow_up_required: z.literal(false),
+  }),
+  z.object({
+    ...base,
+    attendance: z.literal("cancelled"),
+    outcome: z.null(),
+    cancellation_reason: z.enum(cancellationReasons),
+    follow_up_required: z.literal(true),
+    ...schedule,
+  }),
+  z.object({
+    ...base,
+    attendance: z.literal("cancelled"),
+    outcome: z.null(),
+    cancellation_reason: z.enum(cancellationReasons),
+    follow_up_required: z.literal(false),
+  }),
+  z.object({
+    ...base,
+    attendance: z.literal("rescheduled"),
+    outcome: z.null(),
+    ...schedule,
   }),
 ]);
 export function validateSchedule(
@@ -113,7 +151,12 @@ export function resolveSchedule(
     if (actualWall === wall) break;
     instant += wall - actualWall;
   }
-  const result = { ...input, follow_up_at: new Date(instant).toISOString() };
+  const result = {
+    follow_up_date: input.follow_up_date,
+    follow_up_time: input.follow_up_time,
+    time_zone: input.time_zone,
+    follow_up_at: new Date(instant).toISOString(),
+  };
   validateSchedule(result, now);
   return result;
 }

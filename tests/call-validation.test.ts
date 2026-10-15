@@ -10,13 +10,18 @@ const schedule = {
 };
 test("sold requires a saved checkout UUID", () => {
   assert.equal(
-    completeCallSchema.safeParse({ ...base, call_outcome: "sold" }).success,
+    completeCallSchema.safeParse({
+      ...base,
+      attendance: "attended",
+      outcome: "sold",
+    }).success,
     false,
   );
   assert.equal(
     completeCallSchema.safeParse({
       ...base,
-      call_outcome: "sold",
+      attendance: "attended",
+      outcome: "sold",
       checkout_session_id: "ade2cbe6-a76e-4472-beca-9779d410324d",
     }).success,
     true,
@@ -26,7 +31,8 @@ test("follow-up requires reason, schedule and a useful next step", () => {
   assert.equal(
     completeCallSchema.safeParse({
       ...base,
-      call_outcome: "follow_up",
+      attendance: "attended",
+      outcome: "follow_up",
       ...schedule,
       follow_up_reason: "Speak with partner",
       next_step: "Call again",
@@ -36,7 +42,8 @@ test("follow-up requires reason, schedule and a useful next step", () => {
   assert.equal(
     completeCallSchema.safeParse({
       ...base,
-      call_outcome: "follow_up",
+      attendance: "attended",
+      outcome: "follow_up",
       ...schedule,
       follow_up_reason: "Price",
       next_step: "",
@@ -48,7 +55,8 @@ test("no-sale and unqualified reasons are scoped to the outcome", () => {
   assert.equal(
     completeCallSchema.safeParse({
       ...base,
-      call_outcome: "no_sale",
+      attendance: "attended",
+      outcome: "no_sale",
       loss_reason: "Price",
     }).success,
     true,
@@ -56,7 +64,8 @@ test("no-sale and unqualified reasons are scoped to the outcome", () => {
   assert.equal(
     completeCallSchema.safeParse({
       ...base,
-      call_outcome: "unqualified",
+      attendance: "attended",
+      outcome: "unqualified",
       loss_reason: "Price",
     }).success,
     false,
@@ -64,7 +73,8 @@ test("no-sale and unqualified reasons are scoped to the outcome", () => {
   assert.equal(
     completeCallSchema.safeParse({
       ...base,
-      call_outcome: "unqualified",
+      attendance: "attended",
+      outcome: "unqualified",
       loss_reason: "Budget",
     }).success,
     true,
@@ -74,24 +84,27 @@ test("no-show requires a schedule only when rescheduling", () => {
   assert.equal(
     completeCallSchema.safeParse({
       ...base,
-      call_outcome: "no_show",
-      reschedule_needed: false,
+      attendance: "no_show",
+      outcome: null,
+      follow_up_required: false,
     }).success,
     true,
   );
   assert.equal(
     completeCallSchema.safeParse({
       ...base,
-      call_outcome: "no_show",
-      reschedule_needed: true,
+      attendance: "no_show",
+      outcome: null,
+      follow_up_required: true,
     }).success,
     false,
   );
   assert.equal(
     completeCallSchema.safeParse({
       ...base,
-      call_outcome: "no_show",
-      reschedule_needed: true,
+      attendance: "no_show",
+      outcome: null,
+      follow_up_required: true,
       ...schedule,
     }).success,
     true,
@@ -100,7 +113,8 @@ test("no-show requires a schedule only when rescheduling", () => {
 test("stale fields from another outcome are discarded", () => {
   const parsed = completeCallSchema.parse({
     ...base,
-    call_outcome: "no_sale",
+    attendance: "attended",
+    outcome: "no_sale",
     loss_reason: "Price",
     checkout_session_id: "ade2cbe6-a76e-4472-beca-9779d410324d",
     ...schedule,
@@ -155,5 +169,61 @@ test("wall-clock schedules resolve on the server independently of host timezone"
         time_zone: "UTC",
       }),
     /time zone/,
+  );
+});
+
+test("attendance and sales outcome cannot be mixed", () => {
+  assert.equal(
+    completeCallSchema.safeParse({
+      ...base,
+      attendance: "no_show",
+      outcome: "sold",
+      follow_up_required: false,
+    }).success,
+    false,
+  );
+  assert.equal(
+    completeCallSchema.safeParse({
+      ...base,
+      attendance: "attended",
+      outcome: null,
+    }).success,
+    false,
+  );
+  assert.equal(
+    completeCallSchema.safeParse({
+      ...base,
+      attendance: "cancelled",
+      outcome: null,
+      follow_up_required: false,
+    }).success,
+    false,
+  );
+  assert.equal(
+    completeCallSchema.safeParse({
+      ...base,
+      attendance: "cancelled",
+      outcome: null,
+      cancellation_reason: "Prospect cancelled",
+      follow_up_required: false,
+    }).success,
+    true,
+  );
+  assert.equal(
+    completeCallSchema.safeParse({
+      ...base,
+      attendance: "rescheduled",
+      outcome: null,
+    }).success,
+    false,
+  );
+  assert.equal(
+    completeCallSchema.safeParse({
+      ...base,
+      attendance: "rescheduled",
+      outcome: null,
+      ...schedule,
+    }).success,
+    true,
   );
 });

@@ -19,11 +19,15 @@ export function NotesField({ draft, onChange }: FlowProps) {
     </label>
   );
 }
-export function ScheduleFields({ draft, onChange }: FlowProps) {
+export function ScheduleFields({
+  draft,
+  onChange,
+  rescheduled = false,
+}: FlowProps & { rescheduled?: boolean }) {
   return (
     <>
       <label className="call-field">
-        Next follow-up date
+        {rescheduled ? "New date" : "Follow-up date"}
         <input
           type="date"
           required
@@ -32,7 +36,7 @@ export function ScheduleFields({ draft, onChange }: FlowProps) {
         />
       </label>
       <label className="call-field">
-        Next follow-up time
+        {rescheduled ? "New time" : "Follow-up time"}
         <input
           type="time"
           required
@@ -70,14 +74,16 @@ export function ReasonField({
 export function FlowSection({
   title,
   children,
+  step = "04",
 }: {
   title: string;
+  step?: string;
   children: React.ReactNode;
 }) {
   return (
     <section className="form-section call-details">
       <div className="section-heading">
-        <span className="step">03</span>
+        <span className="step">{step}</span>
         <h2>{title}</h2>
       </div>
       <div className="call-fields">{children}</div>
