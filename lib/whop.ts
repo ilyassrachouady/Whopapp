@@ -22,12 +22,43 @@ function daysUntil(date: string) {
       86_400_000,
   );
 }
+async function resolveOfferProductId(
+  client: ReturnType<typeof getWhop>,
+  offer: Offer,
+) {
+  if (offer.whopProductId) return offer.whopProductId;
+
+  const configuredPlans: Record<string, string> = JSON.parse(
+    process.env.WHOP_PLAN_IDS_JSON || "{}",
+  );
+  const candidatePlanIds = [
+    offer.paymentOptions?.pif?.whopPlanId,
+    offer.paymentOptions?.two?.whopPlanId,
+    offer.paymentOptions?.three?.whopPlanId,
+    configuredPlans[`${offer.id}:pif`],
+    configuredPlans[`${offer.id}:two`],
+    configuredPlans[`${offer.id}:three`],
+  ].filter((id): id is string => Boolean(id));
+
+  for (const planId of [...new Set(candidatePlanIds)]) {
+    const plan = await client.plans.retrieve({ id: planId });
+    if (
+      plan.account?.id === process.env.WHOP_COMPANY_ID &&
+      plan.product?.id
+    )
+      return plan.product.id;
+  }
+
+  throw new Error(
+    "Configure at least one verified Whop plan for this offer before using a custom plan.",
+  );
+}
 async function createCustomPlan(
   client: ReturnType<typeof getWhop>,
   input: { id: string; offer: Offer; payment: PaymentPlan },
 ) {
-  if (!process.env.WHOP_COMPANY_ID || !input.offer.whopProductId)
-    throw new Error("Configure the Whop company and product for this offer.");
+  if (!process.env.WHOP_COMPANY_ID)
+    throw new Error("Configure the Whop company ID.");
   if (!input.payment.firstDate)
     throw new Error("Choose the first future payment date.");
   const future = input.payment.installments.slice(1);
@@ -38,10 +69,11 @@ async function createCustomPlan(
   const trialDays = daysUntil(input.payment.firstDate);
   if (trialDays < 1)
     throw new Error("Choose a future date for the next payment.");
+  const productId = await resolveOfferProductId(client, input.offer);
   const plan = await client.plans.create(
     {
       account_id: process.env.WHOP_COMPANY_ID,
-      product_id: input.offer.whopProductId,
+      product_id: productId,
       plan_type: "renewal",
       currency: "usd",
       initial_price: input.payment.amountDueToday / 100,
