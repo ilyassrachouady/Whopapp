@@ -1,3 +1,4 @@
+import { syncCallFields } from "@/lib/call-fields-sync";
 import { syncCallNotes } from "@/lib/call-notes-sync";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -9,12 +10,13 @@ export async function POST(request: Request) {
     const result = await completeCall(await request.json());
     const assignment = await syncCallOwner(result.record);
     const notesSync = await syncCallNotes(result.record);
+    const fieldsSync = await syncCallFields(result.record);
     const checkout =
       result.record.outcome === "sold" || result.record.outcome === "deposit"
         ? await getSession(result.record.checkout_session_id)
         : null;
     return NextResponse.json(
-      { ...result, checkout, assignment, notesSync },
+      { ...result, checkout, assignment, notesSync, fieldsSync },
       { status: result.duplicate ? 200 : 201 },
     );
   } catch (error) {
