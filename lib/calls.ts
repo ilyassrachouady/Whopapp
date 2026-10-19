@@ -1,7 +1,7 @@
 import { resolveCloser } from "./closer-selection";
 import "server-only";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile, link, unlink } from "node:fs/promises";
 import path from "node:path";
 import { getCatalog } from "./catalog";
 import { getSession, getSupabase } from "./supabase";
@@ -107,7 +107,23 @@ export async function completeCall(
     await mkdir(directory, { recursive: true });
     const temp = path.join(directory, `${randomUUID()}.tmp`);
     await writeFile(temp, JSON.stringify(record));
-    await rename(temp, file);
+    if (existing) {
+      await rename(temp, file);
+    } else {
+      try {
+        // Preserve concurrent-submit protection for the first completion.
+        await link(temp, file);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "EEXIST")
+          return {
+            record: JSON.parse(await readFile(file, "utf8")) as CallRecord,
+            duplicate: true,
+          };
+        throw error;
+      } finally {
+        await unlink(temp).catch(() => undefined);
+      }
+    }
   }
 
   return { record, duplicate: false };
