@@ -19,6 +19,13 @@ interface ProviderPlan {
   collect_tax: boolean;
   tax_type?: string;
 }
+function daysUntil(date: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  return Math.round(
+    (Date.parse(`${date}T00:00:00.000Z`) - Date.parse(`${today}T00:00:00.000Z`)) /
+      86_400_000,
+  );
+}
 export function validateWhopPlan(
   provider: ProviderPlan,
   requested: PaymentPlan,
@@ -30,17 +37,32 @@ export function validateWhopPlan(
     usdCents(provider.initial_price_due.amount) !== requested.amountDueToday
   )
     throw new Error("The Whop plan price does not match the amount due today.");
-  if (provider.trial_period_days)
-    throw new Error("Use a Whop plan without a trial period for this checkout.");
   if (requested.type === "pif") {
+    if (provider.trial_period_days)
+      throw new Error("Use a Whop plan without a trial period for this checkout.");
     if (provider.plan_type !== "one_time")
       throw new Error("Pay in Full requires a one-time Whop plan.");
     return;
   }
-  if (requested.type === "custom")
-    throw new Error(
-      "Live custom schedules require an individually verified Whop plan.",
-    );
+  if (requested.type === "custom") {
+    const future = requested.installments.slice(1);
+    const expectedFirstPaymentDelay = requested.firstDate
+      ? daysUntil(requested.firstDate)
+      : 0;
+    if (
+      !future.length ||
+      !future.every((n) => n === future[0]) ||
+      provider.plan_type !== "renewal" ||
+      provider.billing_period !== 30 ||
+      provider.split_pay_required_payments !== future.length ||
+      Math.round(provider.renewal_price * 100) !== future[0] ||
+      provider.trial_period_days !== expectedFirstPaymentDelay
+    )
+      throw new Error("The Whop custom payment schedule does not match this checkout.");
+    return;
+  }
+  if (provider.trial_period_days)
+    throw new Error("Use a Whop plan without a trial period for this checkout.");
   if (
     provider.plan_type !== "renewal" ||
     provider.billing_period !== 30 ||
