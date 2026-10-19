@@ -22,6 +22,15 @@ export function getWhop() {
   });
 }
 
+function getPublicWhop() {
+  return new WhopClient({
+    auth: false,
+    baseUrl: whopApiBaseUrl(),
+    timeoutInSeconds: 15,
+    maxRetries: 1,
+  });
+}
+
 function daysUntil(date: string) {
   const today = new Date().toISOString().slice(0, 10);
   return Math.round(
@@ -39,25 +48,48 @@ function productRouteFromPath(value: string) {
   return normalized.split("/").at(-1) || normalized;
 }
 
-async function resolveProductFromPath(
-  client: ReturnType<typeof getWhop>,
-  offer: Offer,
-) {
+function accountRouteFromPath(value: string) {
+  const normalized = normalizeProductPath(value);
+  return normalized.split("/")[0] || "";
+}
+
+function objectString(value: unknown, key: string) {
+  if (!value || typeof value !== "object") return "";
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" ? field : "";
+}
+
+async function resolveProductFromPath(offer: Offer) {
   if (!offer.whopProductPath) return null;
-  if (!process.env.WHOP_COMPANY_ID)
-    throw new Error("Configure the Whop company ID.");
 
   const desiredRoute = productRouteFromPath(offer.whopProductPath);
-  const products = await client.products.list({
-    account_id: process.env.WHOP_COMPANY_ID,
-  });
+  const desiredAccountRoute = accountRouteFromPath(offer.whopProductPath);
+  const publicClient = getPublicWhop();
+  const queries = [desiredRoute, desiredRoute.replace(/-/g, " ")];
 
-  for await (const product of products) {
-    if (productRouteFromPath(product.route) === desiredRoute) return product.id;
+  for (const query of [...new Set(queries)]) {
+    const products = await publicClient.products.list({
+      query,
+      first: 100,
+      visibilities: ["visible"],
+    });
+
+    for await (const product of products) {
+      if (productRouteFromPath(product.route) !== desiredRoute) continue;
+
+      const accountRoute = objectString(product.account, "route");
+      const accountId = objectString(product.account, "id");
+      const sameAccount =
+        accountRoute === desiredAccountRoute ||
+        (!!process.env.WHOP_COMPANY_ID &&
+          accountId === process.env.WHOP_COMPANY_ID);
+
+      if (sameAccount) return product.id;
+    }
   }
 
   throw new Error(
-    `Could not find the Whop product route ${desiredRoute} in this company.`,
+    `Could not find the public Whop product ${offer.whopProductPath}.`,
   );
 }
 
@@ -65,7 +97,7 @@ async function listOfferPlans(
   client: ReturnType<typeof getWhop>,
   offer: Offer,
 ) {
-  const productId = await resolveProductFromPath(client, offer);
+  const productId = await resolveProductFromPath(offer);
   if (!productId || !process.env.WHOP_COMPANY_ID) return [];
 
   const page = await client.plans.list({
@@ -82,7 +114,7 @@ async function resolveOfferProductId(
   offer: Offer,
 ): Promise<string> {
   if (offer.whopProductPath) {
-    const productId = await resolveProductFromPath(client, offer);
+    const productId = await resolveProductFromPath(offer);
     if (productId) return productId;
   }
 
