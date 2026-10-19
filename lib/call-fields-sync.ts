@@ -13,7 +13,11 @@ const FIELD_IDS = {
     process.env.GHL_CALL_RECORDING_FIELD_ID || "8qJI1gtlK6QF9n0rEcXD",
   callDate: process.env.GHL_CALL_DATE_FIELD_ID || "KYjQJRzXSOarJEh2kqxQ",
   closer: process.env.GHL_CALL_CLOSER_FIELD_ID || "PC1rXs1GzB31f31FcNfh",
+  agreedTotalInvestment:
+    process.env.GHL_AGREED_TOTAL_INVESTMENT_FIELD_ID || "4o5MFBZYoNM0XPjr0dxs",
   cash: process.env.GHL_CASH_COLLECTED_FIELD_ID || "DBBnV2FF6RxWT3OwwveE",
+  firstPaymentDate:
+    process.env.GHL_FIRST_PAYMENT_DATE_FIELD_ID || "ZKCL3fJBAIBwv8YCXxz2",
 } as const;
 
 type GhlFieldValue = {
@@ -88,6 +92,11 @@ async function confirmedCashForCall(record: CallRecord) {
 }
 
 export function callFieldValues(record: CallRecord, cashCollectedCents: number) {
+  const agreedTotalInvestmentCents =
+    record.outcome === "sold" && typeof record.contract_value === "number"
+      ? record.contract_value
+      : 0;
+
   return [
     {
       id: FIELD_IDS.attendance,
@@ -108,6 +117,10 @@ export function callFieldValues(record: CallRecord, cashCollectedCents: number) 
     {
       id: FIELD_IDS.closer,
       fieldValue: record.closer_name,
+    },
+    {
+      id: FIELD_IDS.agreedTotalInvestment,
+      fieldValue: agreedTotalInvestmentCents / 100,
     },
     {
       id: FIELD_IDS.cash,
@@ -139,14 +152,41 @@ export async function syncCallFields(record: CallRecord) {
 export async function syncConfirmedCash(
   contactId: string,
   cashCollectedCents: number,
+  options: {
+    firstPaymentDate?: string;
+    agreedTotalInvestmentCents?: number;
+  } = {},
 ) {
   if (!Number.isSafeInteger(cashCollectedCents) || cashCollectedCents < 0)
     throw new Error("Invalid confirmed cash amount.");
 
-  return updateContactFields(contactId, [
+  const fields: GhlFieldValue[] = [
     {
       id: FIELD_IDS.cash,
       fieldValue: cashCollectedCents / 100,
     },
-  ]);
+  ];
+
+  if (options.agreedTotalInvestmentCents !== undefined) {
+    if (
+      !Number.isSafeInteger(options.agreedTotalInvestmentCents) ||
+      options.agreedTotalInvestmentCents < 0
+    )
+      throw new Error("Invalid agreed total investment amount.");
+    fields.unshift({
+      id: FIELD_IDS.agreedTotalInvestment,
+      fieldValue: options.agreedTotalInvestmentCents / 100,
+    });
+  }
+
+  if (options.firstPaymentDate) {
+    const timestamp = Date.parse(options.firstPaymentDate);
+    if (!Number.isFinite(timestamp)) throw new Error("Invalid first payment date.");
+    fields.push({
+      id: FIELD_IDS.firstPaymentDate,
+      fieldValue: new Date(timestamp).toISOString().slice(0, 10),
+    });
+  }
+
+  return updateContactFields(contactId, fields);
 }
