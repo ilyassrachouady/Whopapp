@@ -30,7 +30,7 @@ export async function sendGHLPaymentWebhook(payment: SalesNotification, sessionI
 
 export async function sendGHLDepositWebhook(
   payment: SalesNotification,
-  session: { id: string; closer_id: string; follow_up_at?: string },
+  session: { id: string; closer_id: string; follow_up_at?: string | null },
   key: string,
 ) {
   if (process.env.PAYMENT_AUTOMATION_MODE !== "real" || process.env.GHL_WRITES_ENABLED !== "true")
