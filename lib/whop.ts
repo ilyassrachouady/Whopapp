@@ -15,6 +15,58 @@ export function getWhop() {
     maxRetries: 1,
   });
 }
+function daysUntil(date: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  return Math.round(
+    (Date.parse(`${date}T00:00:00.000Z`) - Date.parse(`${today}T00:00:00.000Z`)) /
+      86_400_000,
+  );
+}
+async function createCustomPlan(
+  client: ReturnType<typeof getWhop>,
+  input: { id: string; offer: Offer; payment: PaymentPlan },
+) {
+  if (!process.env.WHOP_COMPANY_ID || !input.offer.whopProductId)
+    throw new Error("Configure the Whop company and product for this offer.");
+  if (!input.payment.firstDate)
+    throw new Error("Choose the first future payment date.");
+  const future = input.payment.installments.slice(1);
+  if (!future.length || !future.every((amount) => amount === future[0]))
+    throw new Error(
+      "Custom Whop plans require equal future installment amounts.",
+    );
+  const trialDays = daysUntil(input.payment.firstDate);
+  if (trialDays < 1)
+    throw new Error("Choose a future date for the next payment.");
+  const plan = await client.plans.create(
+    {
+      account_id: process.env.WHOP_COMPANY_ID,
+      product_id: input.offer.whopProductId,
+      plan_type: "renewal",
+      currency: "usd",
+      initial_price: input.payment.amountDueToday / 100,
+      renewal_price: future[0] / 100,
+      billing_period: 30,
+      split_pay_required_payments: future.length,
+      trial_period_days: trialDays,
+      title: `${input.offer.name} custom`.slice(0, 30),
+      visibility: "hidden",
+      release_method: "buy_now",
+      ...(input.offer.enableCardCheckout
+        ? {
+            payment_method_configuration: {
+              enabled: ["card", "bank_wire"],
+              disabled: [],
+              include_platform_defaults: false,
+            },
+          }
+        : {}),
+    },
+    { headers: { "Idempotency-Key": `custom-plan:${input.id}` } },
+  );
+  validateWhopPlan(plan, input.payment);
+  return plan.id;
+}
 export async function createCheckout(input: {
   id: string;
   customer: Prospect;
@@ -31,18 +83,19 @@ export async function createCheckout(input: {
     };
   if (!process.env.WHOP_COMPANY_ID)
     throw new Error("Configure the Whop company ID.");
+  const client = getWhop();
   const plans: Record<string, string> = JSON.parse(
     process.env.WHOP_PLAN_IDS_JSON || "{}",
   );
   const planId =
-    (input.payment.type !== "custom"
-      ? input.offer.paymentOptions?.[input.payment.type]?.whopPlanId
-      : null) || plans[`${input.offer.id}:${input.payment.type}`];
+    input.payment.type === "custom"
+      ? await createCustomPlan(client, input)
+      : input.offer.paymentOptions?.[input.payment.type]?.whopPlanId ||
+        plans[`${input.offer.id}:${input.payment.type}`];
   if (!planId)
     throw new Error(
       "Configure a verified Whop plan for this offer and payment option.",
     );
-  const client = getWhop();
   const providerPlan = await client.plans.retrieve({ id: planId });
   if (providerPlan.account?.id !== process.env.WHOP_COMPANY_ID)
     throw new Error("The Whop plan belongs to a different company.");
