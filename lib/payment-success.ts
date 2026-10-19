@@ -166,12 +166,11 @@ export async function handleWhopPaymentSuccess(
   };
   const store = options.store || paymentStore();
   const persisted = await store.record(session, payment); // Always persist money before any downstream action.
-  const cashSync = await syncConfirmedCash(
-    session.metadata.ghl_contact_id,
-    persisted.total,
-  );
   const live =
     session.mode === "live" && process.env.PAYMENT_AUTOMATION_MODE === "real";
+  const cashSync = live
+    ? await syncConfirmedCash(session.metadata.ghl_contact_id, persisted.total)
+    : { status: "mock" as const };
   const context: Context = {
     session,
     payment,
