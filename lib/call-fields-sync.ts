@@ -66,11 +66,7 @@ async function updateContactFields(
 }
 
 async function confirmedCashForCall(record: CallRecord) {
-  if (
-    record.outcome !== "sold" &&
-    record.outcome !== "deposit"
-  )
-    return 0;
+  if (record.outcome !== "sold" && record.outcome !== "deposit") return 0;
 
   if (!("checkout_session_id" in record) || !record.checkout_session_id) return 0;
 
@@ -121,6 +117,8 @@ export function callFieldValues(record: CallRecord, cashCollectedCents: number) 
 }
 
 export async function syncCallFields(record: CallRecord) {
+  if (record.mode !== "live") return { status: "mock" as const };
+
   try {
     const cashCollected = await confirmedCashForCall(record);
     return await updateContactFields(
