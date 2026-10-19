@@ -8,18 +8,6 @@ import {
 import { createDepositCheckout } from "@/lib/whop";
 import { saveSession, getSession } from "@/lib/supabase";
 export async function POST(request: Request) {
-  if (
-    process.env.WHOP_MODE === "real" &&
-    process.env.VERCEL &&
-    (!process.env.SLACK_BOT_TOKEN || !process.env.SLACK_DEPOSITS_CHANNEL_ID)
-  )
-    return NextResponse.json(
-      {
-        error:
-          "Deposit notifications must be configured before accepting deposits.",
-      },
-      { status: 503 },
-    );
   try {
     const input = depositCheckoutSchema.parse(await request.json());
     const catalog = await getCatalog();
