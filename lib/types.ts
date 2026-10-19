@@ -32,6 +32,7 @@ export interface OfferPaymentOption {
 }
 export interface Offer {
   whopProductId?: string;
+  whopProductPath?: string;
   enableCardCheckout?: boolean;
   id: string;
   name: string;
