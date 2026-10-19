@@ -1,3 +1,4 @@
+import { syncCallFields } from "@/lib/call-fields-sync";
 import { syncCallNotes } from "@/lib/call-notes-sync";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -18,10 +19,11 @@ export async function POST(request: Request) {
     if (error || !record) throw new Error("Call not found.");
     const assignment = await syncCallOwner(record);
     const notesSync = await syncCallNotes(record);
-    return NextResponse.json({ record, assignment, notesSync });
+    const fieldsSync = await syncCallFields(record);
+    return NextResponse.json({ record, assignment, notesSync, fieldsSync });
   } catch {
     return NextResponse.json(
-      { error: "Could not retry assignment." },
+      { error: "Could not retry GHL sync." },
       { status: 400 },
     );
   }
