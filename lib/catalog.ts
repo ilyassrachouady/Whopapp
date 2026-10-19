@@ -127,6 +127,7 @@ export async function getCatalog(
       ...row,
       paymentOptions: preset?.paymentOptions,
       whopProductId: preset?.whopProductId,
+      whopProductPath: preset?.whopProductPath,
       enableCardCheckout: preset?.enableCardCheckout,
       badge: preset?.badge || "OFFER",
       description: preset?.description || "",
