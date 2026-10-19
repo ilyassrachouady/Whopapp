@@ -6,14 +6,13 @@ import { paymentStore, type PaymentStore } from "./payment-store";
 import { updateGHLContactToCustomer } from "./ghl";
 import { syncConfirmedCash } from "./call-fields-sync";
 import {
-  notifyDeposit,
   notifyNewClient,
   type SalesNotification,
 } from "./slack";
 import { sendWelcomeEmail } from "./welcome-email";
 import { provisionProductAccess } from "./product-access";
 import type { CheckoutSession, Prospect, Offer, PaymentRecord } from "./types";
-import { sendGHLPaymentWebhook } from "./ghl-payment-webhook";
+import { sendGHLDepositWebhook, sendGHLPaymentWebhook } from "./ghl-payment-webhook";
 export interface ConfirmedPayment {
   checkout_session_id: string;
   whop_payment_id: string;
@@ -53,7 +52,10 @@ export interface PaymentServices {
 const services: PaymentServices = {
   customer: (c) => updateGHLContactToCustomer(c.contact.ghl_contact_id, c.live),
   newClient: (c, key) => notifyNewClient(c.notification, key, c.live),
-  deposit: (c, key) => notifyDeposit(c.notification, key, c.live),
+  deposit: (c, key) =>
+    c.live
+      ? sendGHLDepositWebhook(c.notification, c.session, key)
+      : Promise.resolve({ status: "mock" as const }),
   welcome: (c, key) => c.live && process.env.GHL_PAYMENT_WEBHOOK_URL
     ? sendGHLPaymentWebhook(c.notification, c.session.id, key)
     : sendWelcomeEmail({ contact: c.contact, offer: c.offer!, live: c.live }),
@@ -69,7 +71,7 @@ export async function processDepositPayment(
   store: PaymentStore,
   actions = services,
 ) {
-  const key = `deposit:${context.payment.whop_payment_id}:slack`;
+  const key = `deposit:${context.payment.whop_payment_id}:ghl`;
   return {
     deposit_notification: await store.action(
       key,
