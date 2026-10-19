@@ -69,29 +69,65 @@ async function updateContactFields(
   };
 }
 
-async function confirmedCashForCall(record: CallRecord) {
-  if (record.outcome !== "sold" && record.outcome !== "deposit") return 0;
+async function paymentSnapshotForCall(record: CallRecord) {
+  if (record.outcome !== "sold" && record.outcome !== "deposit")
+    return { cashCollected: 0, firstPaymentDate: "" };
 
-  if (!("checkout_session_id" in record) || !record.checkout_session_id) return 0;
+  const initialSalePayment =
+    record.outcome === "sold" && typeof record.amount_due_today === "number"
+      ? record.amount_due_today
+      : 0;
+
+  if (!("checkout_session_id" in record) || !record.checkout_session_id)
+    return {
+      cashCollected: initialSalePayment,
+      firstPaymentDate: "",
+    };
 
   const db = getSupabase();
-  if (!db) return 0;
+  if (!db)
+    return {
+      cashCollected: initialSalePayment,
+      firstPaymentDate: "",
+    };
 
   const { data, error } = await db
     .from("payments")
-    .select("amount_collected")
+    .select("amount_collected,paid_at")
     .eq("checkout_session_id", record.checkout_session_id)
     .eq("payment_status", "succeeded");
 
   if (error) throw new Error("Could not read confirmed cash for this call.");
 
-  return (data || []).reduce(
+  const payments = data || [];
+  const confirmedCash = payments.reduce(
     (sum, payment) => sum + Number(payment.amount_collected || 0),
     0,
   );
+  const firstPaymentDate = payments
+    .map((payment) => String(payment.paid_at || ""))
+    .filter(Boolean)
+    .sort()[0];
+
+  return {
+    // For a Sold call, Lewis wants the latest-call snapshot to show the
+    // initial sale payment immediately, even before Whop confirms it. Once
+    // payments arrive, the confirmed cumulative cash takes over.
+    cashCollected:
+      record.outcome === "sold" && confirmedCash === 0
+        ? initialSalePayment
+        : confirmedCash,
+    firstPaymentDate: firstPaymentDate
+      ? new Date(firstPaymentDate).toISOString().slice(0, 10)
+      : "",
+  };
 }
 
-export function callFieldValues(record: CallRecord, cashCollectedCents: number) {
+export function callFieldValues(
+  record: CallRecord,
+  cashCollectedCents: number,
+  firstPaymentDate = "",
+) {
   const agreedTotalInvestmentCents =
     record.outcome === "sold" && typeof record.contract_value === "number"
       ? record.contract_value
@@ -126,6 +162,10 @@ export function callFieldValues(record: CallRecord, cashCollectedCents: number) 
       id: FIELD_IDS.cash,
       fieldValue: cashCollectedCents / 100,
     },
+    {
+      id: FIELD_IDS.firstPaymentDate,
+      fieldValue: firstPaymentDate,
+    },
   ] satisfies GhlFieldValue[];
 }
 
@@ -136,10 +176,14 @@ export async function syncCallFields(record: CallRecord) {
   if (ghlMode() !== "real") return { status: "mock" as const };
 
   try {
-    const cashCollected = await confirmedCashForCall(record);
+    const snapshot = await paymentSnapshotForCall(record);
     return await updateContactFields(
       record.ghl_contact_id,
-      callFieldValues(record, cashCollected),
+      callFieldValues(
+        record,
+        snapshot.cashCollected,
+        snapshot.firstPaymentDate,
+      ),
     );
   } catch (error) {
     return {
