@@ -37,6 +37,7 @@ export const offers: Offer[] = [
     name: "Sofia 1:1",
     slug: "sofia-1-on-1",
     price: 349700,
+    whopProductId: "prod_MFjbczsXska4b",
     whopProductPath: "thecreatorsociety/get-paid-to-post-copy",
     enableCardCheckout: true,
     badge: "PREMIUM",
