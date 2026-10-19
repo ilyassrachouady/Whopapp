@@ -34,63 +34,47 @@ function normalizeProductPath(value: string) {
   return value.replace(/^\/+|\/+$/g, "").replace(/\/checkout\/.*$/, "");
 }
 
-type ListedWhopPlan = {
-  id: string;
-  purchase_url?: string | null;
-  product?: { id?: string | null } | null;
-};
+function productRouteFromPath(value: string) {
+  const normalized = normalizeProductPath(value);
+  return normalized.split("/").at(-1) || normalized;
+}
 
-async function listOfferPlans(offer: Offer): Promise<ListedWhopPlan[]> {
-  if (!offer.whopProductPath) return [];
-  if (!process.env.WHOP_COMPANY_ID || !process.env.WHOP_API_KEY)
-    throw new Error("Configure the Whop company and API credentials.");
+async function resolveProductFromPath(
+  client: ReturnType<typeof getWhop>,
+  offer: Offer,
+) {
+  if (!offer.whopProductPath) return null;
+  if (!process.env.WHOP_COMPANY_ID)
+    throw new Error("Configure the Whop company ID.");
 
-  const desired = normalizeProductPath(offer.whopProductPath);
-  const desiredSlug = desired.split("/").at(-1) || desired;
-  const matched: ListedWhopPlan[] = [];
-  let after = "";
+  const desiredRoute = productRouteFromPath(offer.whopProductPath);
+  const products = await client.products.list({
+    account_id: process.env.WHOP_COMPANY_ID,
+  });
 
-  for (let page = 0; page < 10; page++) {
-    const url = new URL(`${whopApiBaseUrl()}/plans`);
-    url.searchParams.set("company_id", process.env.WHOP_COMPANY_ID);
-    url.searchParams.set("first", "100");
-    if (after) url.searchParams.set("after", after);
-
-    const response = await fetch(url, {
-      headers: { Authorization: `Bearer ${process.env.WHOP_API_KEY}` },
-      signal: AbortSignal.timeout(15000),
-      cache: "no-store",
-    });
-    if (!response.ok)
-      throw new Error(
-        `Could not read current Whop plans (${response.status}).`,
-      );
-
-    const body = (await response.json()) as {
-      data?: ListedWhopPlan[];
-      page_info?: { has_next_page?: boolean; end_cursor?: string | null };
-    };
-
-    for (const plan of body.data || []) {
-      if (!plan.purchase_url || !plan.product?.id) continue;
-      try {
-        const pathname = normalizeProductPath(new URL(plan.purchase_url).pathname);
-        if (
-          pathname === desired ||
-          pathname === desiredSlug ||
-          pathname.endsWith(`/${desiredSlug}`)
-        )
-          matched.push(plan);
-      } catch {
-        // Ignore malformed provider URLs rather than trusting them as mappings.
-      }
-    }
-
-    if (!body.page_info?.has_next_page || !body.page_info.end_cursor) break;
-    after = body.page_info.end_cursor;
+  for await (const product of products) {
+    if (productRouteFromPath(product.route) === desiredRoute) return product.id;
   }
 
-  return matched;
+  throw new Error(
+    `Could not find the Whop product route ${desiredRoute} in this company.`,
+  );
+}
+
+async function listOfferPlans(
+  client: ReturnType<typeof getWhop>,
+  offer: Offer,
+) {
+  const productId = await resolveProductFromPath(client, offer);
+  if (!productId || !process.env.WHOP_COMPANY_ID) return [];
+
+  const page = await client.plans.list({
+    account_id: process.env.WHOP_COMPANY_ID,
+    product_ids: [productId],
+  });
+  const plans: { id: string }[] = [];
+  for await (const plan of page) plans.push({ id: plan.id });
+  return plans;
 }
 
 async function resolveOfferProductId(
@@ -98,12 +82,8 @@ async function resolveOfferProductId(
   offer: Offer,
 ): Promise<string> {
   if (offer.whopProductPath) {
-    const currentPlans = await listOfferPlans(offer);
-    const productId = currentPlans.find((plan) => plan.product?.id)?.product?.id;
-    if (productId) return String(productId);
-    throw new Error(
-      "Could not find the current Whop product behind this offer page.",
-    );
+    const productId = await resolveProductFromPath(client, offer);
+    if (productId) return productId;
   }
 
   if (offer.whopProductId) return offer.whopProductId;
@@ -144,7 +124,7 @@ async function findExistingOfferPlan(
   payment: PaymentPlan,
 ) {
   if (!offer.whopProductPath) return null;
-  const candidates = await listOfferPlans(offer);
+  const candidates = await listOfferPlans(client, offer);
 
   for (const candidate of candidates) {
     try {
