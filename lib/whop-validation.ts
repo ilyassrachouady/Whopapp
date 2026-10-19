@@ -22,7 +22,7 @@ interface ProviderPlan {
 export function validateWhopPlan(
   provider: ProviderPlan,
   requested: PaymentPlan,
-  allowTestTax = false,
+  _allowTestTax = false,
 ) {
   if (
     provider.currency !== "usd" ||
@@ -30,10 +30,8 @@ export function validateWhopPlan(
     usdCents(provider.initial_price_due.amount) !== requested.amountDueToday
   )
     throw new Error("The Whop plan price does not match the amount due today.");
-  if ((provider.collect_tax && provider.tax_type !== "inclusive" && !allowTestTax) || provider.trial_period_days)
-    throw new Error(
-      "Use a Whop plan without added tax or trial periods for this checkout.",
-    );
+  if (provider.trial_period_days)
+    throw new Error("Use a Whop plan without a trial period for this checkout.");
   if (requested.type === "pif") {
     if (provider.plan_type !== "one_time")
       throw new Error("Pay in Full requires a one-time Whop plan.");
