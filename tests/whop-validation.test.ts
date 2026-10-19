@@ -18,9 +18,16 @@ test("Whop exact decimal amounts preserve cents", () => {
   for (const amount of ["-1", "1.999", "NaN", "1e3"])
     assert.throws(() => usdCents(amount));
 });
-test("PIF rejects a mismatched Whop price, currency, or billing type", () => {
+test("PIF accepts Whop-added tax but rejects mismatched price, currency, billing type, or trials", () => {
   const plan = calculatePlan(199700, "pif");
   assert.doesNotThrow(() => validateWhopPlan(base, plan));
+  assert.doesNotThrow(() => validateWhopPlan({ ...base, collect_tax: true }, plan));
+  assert.doesNotThrow(() =>
+    validateWhopPlan(
+      { ...base, collect_tax: true, tax_type: "exclusive" },
+      plan,
+    ),
+  );
   assert.throws(
     () =>
       validateWhopPlan(
@@ -33,7 +40,10 @@ test("PIF rejects a mismatched Whop price, currency, or billing type", () => {
   assert.throws(() =>
     validateWhopPlan({ ...base, plan_type: "renewal" }, plan),
   );
-  assert.throws(() => validateWhopPlan({ ...base, collect_tax: true }, plan));
+  assert.throws(
+    () => validateWhopPlan({ ...base, trial_period_days: 7 }, plan),
+    /trial/,
+  );
 });
 test("split payments use a uniform renewal and preserve contract value exactly", () => {
   const plan = calculatePlan(199700, "three");
