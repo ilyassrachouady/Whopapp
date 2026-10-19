@@ -2,19 +2,26 @@ import "server-only";
 import { WhopClient } from "@whop/sdk";
 import type { CheckoutMetadata, Offer, PaymentPlan, Prospect } from "./types";
 import { validateWhopPlan } from "./whop-validation";
+
 export const whopSandbox = () => process.env.WHOP_SANDBOX !== "false";
+
+function whopApiBaseUrl() {
+  return whopSandbox()
+    ? "https://sandbox-api.whop.com/api/v1"
+    : "https://api.whop.com/api/v1";
+}
+
 export function getWhop() {
   if (!process.env.WHOP_API_KEY)
     throw new Error("Whop API credentials are missing.");
   return new WhopClient({
     token: process.env.WHOP_API_KEY,
-    baseUrl: whopSandbox()
-      ? "https://sandbox-api.whop.com/api/v1"
-      : "https://api.whop.com/api/v1",
+    baseUrl: whopApiBaseUrl(),
     timeoutInSeconds: 15,
     maxRetries: 1,
   });
 }
+
 function daysUntil(date: string) {
   const today = new Date().toISOString().slice(0, 10);
   return Math.round(
@@ -22,10 +29,83 @@ function daysUntil(date: string) {
       86_400_000,
   );
 }
+
+function normalizeProductPath(value: string) {
+  return value.replace(/^\/+|\/+$/g, "").replace(/\/checkout\/.*$/, "");
+}
+
+type ListedWhopPlan = {
+  id: string;
+  purchase_url?: string | null;
+  product?: { id?: string | null } | null;
+};
+
+async function listOfferPlans(offer: Offer): Promise<ListedWhopPlan[]> {
+  if (!offer.whopProductPath) return [];
+  if (!process.env.WHOP_COMPANY_ID || !process.env.WHOP_API_KEY)
+    throw new Error("Configure the Whop company and API credentials.");
+
+  const desired = normalizeProductPath(offer.whopProductPath);
+  const desiredSlug = desired.split("/").at(-1) || desired;
+  const matched: ListedWhopPlan[] = [];
+  let after = "";
+
+  for (let page = 0; page < 10; page++) {
+    const url = new URL(`${whopApiBaseUrl()}/plans`);
+    url.searchParams.set("company_id", process.env.WHOP_COMPANY_ID);
+    url.searchParams.set("first", "100");
+    if (after) url.searchParams.set("after", after);
+
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${process.env.WHOP_API_KEY}` },
+      signal: AbortSignal.timeout(15000),
+      cache: "no-store",
+    });
+    if (!response.ok)
+      throw new Error(
+        `Could not read current Whop plans (${response.status}).`,
+      );
+
+    const body = (await response.json()) as {
+      data?: ListedWhopPlan[];
+      page_info?: { has_next_page?: boolean; end_cursor?: string | null };
+    };
+
+    for (const plan of body.data || []) {
+      if (!plan.purchase_url || !plan.product?.id) continue;
+      try {
+        const pathname = normalizeProductPath(new URL(plan.purchase_url).pathname);
+        if (
+          pathname === desired ||
+          pathname === desiredSlug ||
+          pathname.endsWith(`/${desiredSlug}`)
+        )
+          matched.push(plan);
+      } catch {
+        // Ignore malformed provider URLs rather than trusting them as mappings.
+      }
+    }
+
+    if (!body.page_info?.has_next_page || !body.page_info.end_cursor) break;
+    after = body.page_info.end_cursor;
+  }
+
+  return matched;
+}
+
 async function resolveOfferProductId(
   client: ReturnType<typeof getWhop>,
   offer: Offer,
 ): Promise<string> {
+  if (offer.whopProductPath) {
+    const currentPlans = await listOfferPlans(offer);
+    const productId = currentPlans.find((plan) => plan.product?.id)?.product?.id;
+    if (productId) return String(productId);
+    throw new Error(
+      "Could not find the current Whop product behind this offer page.",
+    );
+  }
+
   if (offer.whopProductId) return offer.whopProductId;
 
   const configuredPlans: Record<string, string> = JSON.parse(
@@ -41,18 +121,107 @@ async function resolveOfferProductId(
   ].filter((id): id is string => Boolean(id));
 
   for (const planId of [...new Set(candidatePlanIds)]) {
-    const plan = await client.plans.retrieve({ id: planId });
-    if (
-      plan.account?.id === process.env.WHOP_COMPANY_ID &&
-      plan.product?.id
-    )
-      return String(plan.product.id);
+    try {
+      const plan = await client.plans.retrieve({ id: planId });
+      if (
+        plan.account?.id === process.env.WHOP_COMPANY_ID &&
+        plan.product?.id
+      )
+        return String(plan.product.id);
+    } catch {
+      // Stale plan IDs should not prevent another verified plan from resolving.
+    }
   }
 
   throw new Error(
     "Configure at least one verified Whop plan for this offer before using a custom plan.",
   );
 }
+
+async function findExistingOfferPlan(
+  client: ReturnType<typeof getWhop>,
+  offer: Offer,
+  payment: PaymentPlan,
+) {
+  if (!offer.whopProductPath) return null;
+  const candidates = await listOfferPlans(offer);
+
+  for (const candidate of candidates) {
+    try {
+      const plan = await client.plans.retrieve({ id: candidate.id });
+      if (plan.account?.id !== process.env.WHOP_COMPANY_ID) continue;
+      if (
+        offer.enableCardCheckout &&
+        !plan.effective_payment_method_configuration?.enabled?.includes("card")
+      )
+        continue;
+      validateWhopPlan(plan, payment);
+      return plan.id;
+    } catch {
+      // Keep looking: public products can contain several unrelated pricing plans.
+    }
+  }
+
+  return null;
+}
+
+async function createStandardOfferPlan(
+  client: ReturnType<typeof getWhop>,
+  input: { id: string; offer: Offer; payment: PaymentPlan },
+) {
+  if (!process.env.WHOP_COMPANY_ID)
+    throw new Error("Configure the Whop company ID.");
+
+  const productId = await resolveOfferProductId(client, input.offer);
+  const recurring = input.payment.paymentCount > 1;
+  const futureAmount = input.payment.installments[1];
+  if (
+    recurring &&
+    (!futureAmount ||
+      !input.payment.installments
+        .slice(1)
+        .every((amount) => amount === futureAmount))
+  )
+    throw new Error("Whop split payments require equal future installments.");
+
+  const plan = await client.plans.create(
+    {
+      account_id: process.env.WHOP_COMPANY_ID,
+      product_id: productId,
+      plan_type: recurring ? "renewal" : "one_time",
+      currency: "usd",
+      initial_price: input.payment.amountDueToday / 100,
+      renewal_price: recurring ? futureAmount / 100 : 0,
+      ...(recurring
+        ? {
+            billing_period: 30,
+            split_pay_required_payments: input.payment.paymentCount - 1,
+          }
+        : {}),
+      title: `${input.offer.name} ${input.payment.type}`.slice(0, 30),
+      visibility: "hidden",
+      release_method: "buy_now",
+      ...(input.offer.enableCardCheckout
+        ? {
+            payment_method_configuration: {
+              enabled: ["card", "bank_wire"],
+              disabled: [],
+              include_platform_defaults: false,
+            },
+          }
+        : {}),
+    },
+    {
+      headers: {
+        "Idempotency-Key": `offer-plan:${input.id}:${input.payment.type}`,
+      },
+    },
+  );
+
+  validateWhopPlan(plan, input.payment);
+  return plan.id;
+}
+
 async function createCustomPlan(
   client: ReturnType<typeof getWhop>,
   input: { id: string; offer: Offer; payment: PaymentPlan },
@@ -99,6 +268,7 @@ async function createCustomPlan(
   validateWhopPlan(plan, input.payment);
   return plan.id;
 }
+
 export async function createCheckout(input: {
   id: string;
   customer: Prospect;
@@ -115,19 +285,30 @@ export async function createCheckout(input: {
     };
   if (!process.env.WHOP_COMPANY_ID)
     throw new Error("Configure the Whop company ID.");
+
   const client = getWhop();
   const plans: Record<string, string> = JSON.parse(
     process.env.WHOP_PLAN_IDS_JSON || "{}",
   );
-  const planId =
-    input.payment.type === "custom"
-      ? await createCustomPlan(client, input)
-      : input.offer.paymentOptions?.[input.payment.type]?.whopPlanId ||
-        plans[`${input.offer.id}:${input.payment.type}`];
+
+  let planId: string | null = null;
+  if (input.payment.type === "custom") {
+    planId = await createCustomPlan(client, input);
+  } else if (input.offer.whopProductPath) {
+    planId = await findExistingOfferPlan(client, input.offer, input.payment);
+    if (!planId) planId = await createStandardOfferPlan(client, input);
+  } else {
+    planId =
+      input.offer.paymentOptions?.[input.payment.type]?.whopPlanId ||
+      plans[`${input.offer.id}:${input.payment.type}`] ||
+      null;
+  }
+
   if (!planId)
     throw new Error(
       "Configure a verified Whop plan for this offer and payment option.",
     );
+
   const providerPlan = await client.plans.retrieve({ id: planId });
   if (providerPlan.account?.id !== process.env.WHOP_COMPANY_ID)
     throw new Error("The Whop plan belongs to a different company.");
@@ -155,6 +336,7 @@ export async function createCheckout(input: {
       planId === process.env.WHOP_LOCAL_TEST_PLAN_ID &&
       input.payment.amountDueToday === 100,
   );
+
   const checkout = await client.checkoutConfigurations.create(
     {
       account_id: process.env.WHOP_COMPANY_ID,
