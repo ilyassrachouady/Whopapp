@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { prospects } from "../lib/config";
 import { calculatePlan } from "../lib/payments";
 import type { CheckoutSession } from "../lib/types";
-test("completion persists every outcome, verifies sold ownership and prevents duplicate reports", async () => {
+test("completion persists every outcome, verifies sold ownership and replaces a later outcome for the same call", async () => {
   const previous = process.cwd();
   const temp = await mkdtemp(path.join(tmpdir(), "payment-desk-calls-"));
   process.chdir(temp);
@@ -43,15 +43,15 @@ test("completion persists every outcome, verifies sold ownership and prevents du
     assert.equal(noSale.record.ghl_contact_id, added[0].ghl_contact_id);
     assert.equal(noSale.record.appointment_id, added[0].appointment_id);
     assert.equal(noSale.record.sync_status, "pending");
-    const retry = await completeCall({
+    const later = await completeCall({
       ...base,
       attendance: "attended",
       outcome: "unqualified",
       loss_reason: "Budget",
     });
-    assert.equal(retry.duplicate, true);
-    assert.equal(retry.record.id, noSale.record.id);
-    assert.equal(retry.record.outcome, "no_sale");
+    assert.equal(later.duplicate, false);
+    assert.equal(later.record.id, noSale.record.id);
+    assert.equal(later.record.outcome, "unqualified");
     const concurrent = await Promise.all(
       Array.from({ length: 8 }, () =>
         completeCall({
