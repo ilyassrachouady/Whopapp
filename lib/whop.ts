@@ -25,7 +25,7 @@ function daysUntil(date: string) {
 async function resolveOfferProductId(
   client: ReturnType<typeof getWhop>,
   offer: Offer,
-) {
+): Promise<string> {
   if (offer.whopProductId) return offer.whopProductId;
 
   const configuredPlans: Record<string, string> = JSON.parse(
@@ -46,7 +46,7 @@ async function resolveOfferProductId(
       plan.account?.id === process.env.WHOP_COMPANY_ID &&
       plan.product?.id
     )
-      return plan.product.id;
+      return String(plan.product.id);
   }
 
   throw new Error(
