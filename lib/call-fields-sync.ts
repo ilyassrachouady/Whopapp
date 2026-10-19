@@ -130,7 +130,10 @@ export function callFieldValues(record: CallRecord, cashCollectedCents: number) 
 }
 
 export async function syncCallFields(record: CallRecord) {
-  if (record.mode !== "live") return { status: "mock" as const };
+  // GHL field sync is controlled by the CRM integration mode, not by whether
+  // owner assignment changed the in-memory call record to `live`. This keeps
+  // reporting fields working for "Other closer" and other no-assignment cases.
+  if (ghlMode() !== "real") return { status: "mock" as const };
 
   try {
     const cashCollected = await confirmedCashForCall(record);
