@@ -187,15 +187,25 @@ async function createStandardOfferPlan(
 
   const productId = await resolveOfferProductId(client, input.offer);
   const recurring = input.payment.paymentCount > 1;
-  const futureAmount = input.payment.installments[1];
+  const renewalAmount = recurring ? input.payment.installments[1] : 0;
+  const futureInstallments = input.payment.installments.slice(1);
+
   if (
     recurring &&
-    (!futureAmount ||
-      !input.payment.installments
-        .slice(1)
-        .every((amount) => amount === futureAmount))
+    (!renewalAmount ||
+      !futureInstallments.every((amount) => amount === renewalAmount))
   )
     throw new Error("Whop split payments require equal future installments.");
+
+  // On a Whop renewal plan, initial_price is an ADDITIONAL upfront amount
+  // charged on top of the first renewal_price. Keep renewal_price as the
+  // repeating installment and use initial_price only for any first-payment
+  // cent adjustment (for example $3,497 / 3 => 1165.68, 1165.66, 1165.66).
+  const initialAdjustment = recurring
+    ? input.payment.amountDueToday - renewalAmount
+    : input.payment.amountDueToday;
+  if (initialAdjustment < 0)
+    throw new Error("The first installment cannot be lower than later installments.");
 
   const plan = await client.plans.create(
     {
@@ -203,12 +213,12 @@ async function createStandardOfferPlan(
       product_id: productId,
       plan_type: recurring ? "renewal" : "one_time",
       currency: "usd",
-      initial_price: input.payment.amountDueToday / 100,
-      renewal_price: recurring ? futureAmount / 100 : 0,
+      initial_price: initialAdjustment / 100,
+      renewal_price: recurring ? renewalAmount / 100 : 0,
       ...(recurring
         ? {
             billing_period: 30,
-            split_pay_required_payments: input.payment.paymentCount - 1,
+            split_pay_required_payments: input.payment.paymentCount,
           }
         : {}),
       title: `${input.offer.name} ${input.payment.type}`.slice(0, 30),
@@ -226,7 +236,7 @@ async function createStandardOfferPlan(
     },
     {
       headers: {
-        "Idempotency-Key": `offer-plan:${input.id}:${input.payment.type}`,
+        "Idempotency-Key": `offer-plan:v2:${input.id}:${input.payment.type}:${input.payment.amountDueToday}:${renewalAmount}:${input.payment.paymentCount}`,
       },
     },
   );
