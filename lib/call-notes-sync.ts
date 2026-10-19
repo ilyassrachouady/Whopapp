@@ -2,6 +2,11 @@ import "server-only";
 import { ensureContactCallNote } from "./ghl";
 import { attendanceLabels, outcomeLabels } from "./call-options";
 import type { CallRecord } from "./types";
+
+function callReportMarker(record: CallRecord) {
+  return `Payment Desk report reference: ${record.id}:${record.created_at}`;
+}
+
 export function callNoteBody(record: CallRecord) {
   return [
     "Payment Desk — Call report",
@@ -26,17 +31,17 @@ export function callNoteBody(record: CallRecord) {
       ? `Next step: ${record.next_step}`
       : "",
     record.notes ? `\nCall notes:\n${record.notes}` : "",
-    `\nPayment Desk report reference: ${record.id}`,
+    `\n${callReportMarker(record)}`,
   ]
     .filter(Boolean)
     .join("\n");
 }
+
 export async function syncCallNotes(record: CallRecord) {
   try {
-    const marker = `Payment Desk report reference: ${record.id}`;
     return await ensureContactCallNote(
       record.ghl_contact_id,
-      marker,
+      callReportMarker(record),
       callNoteBody(record),
     );
   } catch {
