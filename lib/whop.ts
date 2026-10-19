@@ -60,6 +60,7 @@ function objectString(value: unknown, key: string) {
 }
 
 async function resolveProductFromPath(offer: Offer) {
+  if (offer.whopProductId) return offer.whopProductId;
   if (!offer.whopProductPath) return null;
 
   const desiredRoute = productRouteFromPath(offer.whopProductPath);
