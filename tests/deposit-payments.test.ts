@@ -169,7 +169,7 @@ test("confirmed payments persist, separate deposits, onboard first installments,
       },
     );
     await t.test(
-      "deposit call completion persists its checkout and required follow-up once",
+      "deposit call completion updates one stable record and preserves its checkout and follow-up",
       async () => {
         const { completeCall } = await import("../lib/calls");
         const input = {
@@ -188,7 +188,9 @@ test("confirmed payments persist, separate deposits, onboard first installments,
         assert.equal(first.duplicate, false);
         const retry = await completeCall(input);
         assert.equal(retry.record.id, first.record.id);
-        assert.equal(retry.duplicate, true);
+        // Existing completions support edits; they update the same record.
+        assert.equal(retry.duplicate, false);
+        assert.equal((await readdir(path.join(directory, ".data", "calls"))).filter(name => name.endsWith(".json")).length, 1);
       },
     );
     await t.test(
@@ -286,11 +288,9 @@ test("confirmed payments persist, separate deposits, onboard first installments,
         assert.deepEqual(Object.keys(result.downstream), [
           "deposit_notification",
         ]);
-        assert.ok(
-          "deposit_notification" in result.downstream &&
-            result.downstream.deposit_notification.channel ===
-              "#sales-deposits",
-        );
+        assert.equal(result.mode, "mock");
+        assert.ok("deposit_notification" in result.downstream);
+        assert.equal(result.downstream.deposit_notification.status, "mock");
         const payments = JSON.parse(
           await readFile(
             path.join(

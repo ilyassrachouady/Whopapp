@@ -27,6 +27,19 @@ type GhlFieldValue = {
   fieldValue: string | number;
 };
 
+// Call completion is not a new money event. Preserve positive CRM cash and
+// existing dates; confirmed receipt processing has its own explicit write path.
+export function protectExistingCallCash(fields: GhlFieldValue[], existing: unknown) {
+  const rows = Array.isArray(existing) ? existing : [];
+  return fields.filter((field) => {
+    if (field.id === FIELD_IDS.firstPaymentDate && field.fieldValue === "") return false;
+    if (field.id !== FIELD_IDS.cash) return true;
+    const current = rows.find((row) => row && row.id === FIELD_IDS.cash);
+    const raw = current?.value ?? current?.fieldValue;
+    return !(raw !== undefined && raw !== null && String(raw).trim() !== "" && Number(raw) > 0);
+  });
+}
+
 function writesEnabled() {
   if (process.env.GHL_WRITES_ENABLED !== "true")
     throw new Error("GHL writes are disabled.");
@@ -35,6 +48,7 @@ function writesEnabled() {
 async function updateContactFields(
   contactId: string,
   customFields: GhlFieldValue[],
+  preserveCallCash = false,
 ) {
   if (ghlMode() !== "real")
     return { status: "mock" as const, contactId, customFields };
@@ -43,6 +57,8 @@ async function updateContactFields(
   const contact = await getContact(contactId);
   if (!contact || !("locationId" in contact))
     throw new Error("A live GHL contact is required.");
+
+  if (preserveCallCash) customFields = protectExistingCallCash(customFields, contact.customFields);
 
   const response = await fetch(
     `https://services.leadconnectorhq.com/contacts/${encodeURIComponent(contactId)}`,
@@ -177,7 +193,17 @@ export function callFieldValues(
       id: FIELD_IDS.firstPaymentDate,
       fieldValue: firstPaymentDate,
     },
-  ] satisfies GhlFieldValue[];
+  ].filter((field) => {
+    // Attendance/follow-up changes must not erase an existing sale's finances.
+    // Deposits may update cash only when there is a confirmed receipt.
+    if (record.outcome !== "sold") {
+      if (field.id === FIELD_IDS.paymentStructure || field.id === FIELD_IDS.agreedTotalInvestment)
+        return false;
+      if (field.id === FIELD_IDS.cash || field.id === FIELD_IDS.firstPaymentDate)
+        return record.outcome === "deposit" && Boolean(firstPaymentDate);
+    }
+    return true;
+  }) satisfies GhlFieldValue[];
 }
 
 export async function syncCallFields(record: CallRecord) {
@@ -195,6 +221,7 @@ export async function syncCallFields(record: CallRecord) {
         snapshot.cashCollected,
         snapshot.firstPaymentDate,
       ),
+      true,
     );
   } catch (error) {
     return {
