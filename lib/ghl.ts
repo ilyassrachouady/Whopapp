@@ -48,7 +48,7 @@ const opportunitySchema = z
     pipelineStageId: z.string(),
   })
   .passthrough();
-async function request(path: string, method = "GET", body?: unknown) {
+export async function request(path: string, method = "GET", body?: unknown) {
   if (!process.env.GHL_API_KEY || !process.env.GHL_LOCATION_ID)
     throw new Error(
       "Configure a GHL location and its private integration token.",

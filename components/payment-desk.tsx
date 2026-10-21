@@ -79,6 +79,10 @@ export default function PaymentDesk({
   const [outcome, setOutcome] = useState<CallOutcome | null>(null);
   const [draft, setDraft] = useState<CallDraft>(emptyCallDraft);
   const [notesSyncStatus, setNotesSyncStatus] = useState("mock");
+  const [appointmentSync, setAppointmentSync] = useState<{
+    status: string;
+    message?: string;
+  }>({ status: "mock" });
   const [assignmentStatus, setAssignmentStatus] = useState("mock");
   const [assignmentBusy, setAssignmentBusy] = useState(false);
   const [completed, setCompleted] = useState<CallRecord | null>(null);
@@ -257,6 +261,7 @@ export default function PaymentDesk({
       if (!response.ok) throw new Error(data.error);
       setAssignmentStatus(data.assignment?.status || "mock");
       setNotesSyncStatus(data.notesSync?.status || "mock");
+      setAppointmentSync(data.appointmentSync || { status: "mock" });
       const record: CallRecord = data.record;
       setCompleted(record);
       setAttendance(record.attendance);
@@ -328,12 +333,15 @@ export default function PaymentDesk({
       setCompleted(data.record);
       setAssignmentStatus(data.assignment.status);
       setNotesSyncStatus(data.notesSync?.status || "mock");
+      setAppointmentSync(data.appointmentSync || { status: "mock" });
       notify(
-        data.notesSync?.status === "failed"
-          ? data.notesSync.message
-          : data.assignment.status === "synced"
-            ? "GHL contact assignment synced."
-            : data.assignment.message || "GHL owner unchanged.",
+        data.appointmentSync?.status === "failed"
+          ? data.appointmentSync.message
+          : data.notesSync?.status === "failed"
+            ? data.notesSync.message
+            : data.assignment.status === "synced"
+              ? "GHL contact assignment synced."
+              : data.assignment.message || "GHL owner unchanged.",
       );
     } catch (error) {
       notify((error as Error).message);
@@ -343,6 +351,7 @@ export default function PaymentDesk({
   }
   function startNextCall() {
     setNotesSyncStatus("mock");
+    setAppointmentSync({ status: "mock" });
     const next =
       (prospects.findIndex((p) => p.id === prospectId) + 1) % prospects.length;
     checkoutRequestId.current = null;
@@ -1056,6 +1065,7 @@ export default function PaymentDesk({
                   checkout={result}
                   completed={completed}
                   notesSyncStatus={notesSyncStatus}
+                  appointmentSync={appointmentSync}
                   assignmentStatus={assignmentStatus}
                   assignmentBusy={assignmentBusy}
                   onRetryAssignment={retryAssignment}

@@ -29,6 +29,7 @@ interface Props {
   checkout: CheckoutSession | null;
   completed: CallRecord | null;
   notesSyncStatus?: string;
+  appointmentSync?: { status: string; message?: string };
   assignmentStatus?: string;
   assignmentBusy?: boolean;
   onRetryAssignment?: () => void;
@@ -53,6 +54,7 @@ export function CallSummary({
   checkout,
   completed,
   notesSyncStatus = "mock",
+  appointmentSync = { status: "mock" },
   assignmentStatus = "mock",
   assignmentBusy = false,
   onRetryAssignment,
@@ -264,7 +266,23 @@ export function CallSummary({
                 : "Call saved. GHL notes need a retry."}
             </p>
           )}
-          {(assignmentStatus === "failed" || notesSyncStatus === "failed") && (
+          {attendance === "rescheduled" &&
+            appointmentSync.status !== "mock" && (
+              <p
+                className={
+                  appointmentSync.status === "failed" ? "error" : "crm-ready"
+                }
+                role="status"
+              >
+                {appointmentSync.message ||
+                  (appointmentSync.status === "synced"
+                    ? "Advisory Call appointment rescheduled in GHL."
+                    : "Calendar update needs a retry.")}
+              </p>
+            )}
+          {(assignmentStatus === "failed" ||
+            notesSyncStatus === "failed" ||
+            appointmentSync.status === "failed") && (
             <Button disabled={assignmentBusy} onClick={onRetryAssignment}>
               {assignmentBusy ? "Retrying…" : "Retry GHL sync"}
             </Button>
