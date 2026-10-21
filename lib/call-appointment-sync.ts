@@ -19,13 +19,12 @@ const eventSchema = z.object({
 const active = (s: string) =>
   ["new", "confirmed", "active"].includes(s.toLowerCase());
 export async function rescheduleCallAppointment(record: CallRecord) {
-  if (record.attendance !== "rescheduled")
+  if (record.attendance !== "rescheduled" && record.attendance !== "cancelled")
     return { status: "not_required" as const };
+  const cancelling = record.attendance === "cancelled";
   if (ghlMode() !== "real") return { status: "mock" as const };
   if (process.env.GHL_WRITES_ENABLED !== "true")
-    throw new Error(
-      "GHL writes are disabled. The appointment has not been rescheduled.",
-    );
+    throw new Error("GHL writes are disabled. No appointment update was sent.");
   const calendarId =
     process.env.GHL_ADVISORY_CALENDAR_ID || "W8BVoDU02Ez8uAbOnGHR";
   const contact = await getContact(record.ghl_contact_id);
@@ -38,22 +37,27 @@ export async function rescheduleCallAppointment(record: CallRecord) {
     calendar?.locationId !== process.env.GHL_LOCATION_ID ||
     calendar?.id !== calendarId ||
     calendar?.isActive === false ||
-    calendar?.allowReschedule === false
+    (cancelling
+      ? calendar?.allowCancellation === false
+      : calendar?.allowReschedule === false)
   )
     throw new Error(
-      "Advisory Call calendar cannot be verified or does not allow rescheduling.",
+      "Advisory Call calendar cannot be verified or does not allow this change.",
     );
-  if (!record.follow_up_date || !record.follow_up_time || !record.time_zone)
-    throw new Error("Choose a new date, time and time zone.");
-  const schedule = resolveSchedule(
-    {
-      follow_up_date: record.follow_up_date,
-      follow_up_time: record.follow_up_time,
-      time_zone: record.time_zone,
-    },
-    0,
-  );
-  const target = Date.parse(schedule.follow_up_at);
+  let target = 0;
+  if (!cancelling) {
+    if (!record.follow_up_date || !record.follow_up_time || !record.time_zone)
+      throw new Error("Choose a new date, time and time zone.");
+    const schedule = resolveSchedule(
+      {
+        follow_up_date: record.follow_up_date,
+        follow_up_time: record.follow_up_time,
+        time_zone: record.time_zone,
+      },
+      0,
+    );
+    target = Date.parse(schedule.follow_up_at);
+  }
   let id = record.appointment_id;
   // Desk-generated call references are not GHL event IDs.
   if (!id || id.startsWith("desk_") || id.startsWith("appt_")) {
@@ -71,7 +75,7 @@ export async function rescheduleCallAppointment(record: CallRecord) {
     if (candidates.length !== 1)
       throw new Error(
         candidates.length
-          ? "Multiple active Advisory Call appointments found. Reschedule the intended appointment in GHL; no appointment was changed here."
+          ? "Multiple active Advisory Call appointments found. Change the intended appointment in GHL; no appointment was changed here."
           : "No active Advisory Call appointment found for this contact. Book one in GHL first.",
       );
     id = candidates[0].id;
@@ -94,8 +98,14 @@ export async function rescheduleCallAppointment(record: CallRecord) {
     );
   if (event.isRecurring || event.rrule)
     throw new Error(
-      "Recurring appointments must be rescheduled in GHL to avoid changing the series.",
+      "Recurring appointments must be changed in GHL to avoid changing the series.",
     );
+  if (cancelling && event.appointmentStatus.toLowerCase() === "cancelled")
+    return {
+      status: "synced" as const,
+      appointmentId: id,
+      message: "GHL appointment is already cancelled.",
+    };
   if (!active(event.appointmentStatus))
     throw new Error(
       "This appointment is no longer active. Check the booking in GHL.",
@@ -103,14 +113,14 @@ export async function rescheduleCallAppointment(record: CallRecord) {
   const duration = Date.parse(event.endTime) - Date.parse(event.startTime);
   if (!Number.isFinite(duration) || duration <= 0 || duration > 86400000)
     throw new Error("Appointment duration could not be verified.");
-  if (Date.parse(event.startTime) === target)
+  if (!cancelling && Date.parse(event.startTime) === target)
     return {
       status: "synced" as const,
       appointmentId: id,
       startTime: event.startTime,
       message: "GHL appointment is already at the requested time.",
     };
-  if (target <= Date.now())
+  if (!cancelling && target <= Date.now())
     throw new Error("Choose a future appointment time.");
   // Save the chosen identity before the external write so a retry cannot select a different event.
   const db = getSupabase();
@@ -137,19 +147,23 @@ export async function rescheduleCallAppointment(record: CallRecord) {
       );
   }
   record.appointment_id = id;
-  const end = new Date(target + duration).toISOString();
+  const end = cancelling
+    ? event.endTime
+    : new Date(target + duration).toISOString();
   try {
     await request(
       `/calendars/events/appointments/${encodeURIComponent(id)}`,
       "PUT",
-      {
-        startTime: new Date(target).toISOString(),
-        endTime: end,
-        appointmentStatus: "confirmed",
-        ignoreDateRange: false,
-        ignoreFreeSlotValidation: false,
-        toNotify: true,
-      },
+      cancelling
+        ? { appointmentStatus: "cancelled", toNotify: true }
+        : {
+            startTime: new Date(target).toISOString(),
+            endTime: end,
+            appointmentStatus: "confirmed",
+            ignoreDateRange: false,
+            ignoreFreeSlotValidation: false,
+            toNotify: true,
+          },
     );
   } catch (e) {
     const message = e instanceof Error ? e.message : "";
@@ -157,7 +171,7 @@ export async function rescheduleCallAppointment(record: CallRecord) {
       throw new Error(
         "GHL calendar write permission is missing. Enable calendars/events.write on the integration key.",
       );
-    if (/\((400|409|422)\)/.test(message))
+    if (/\((400|409|422)\)/.test(message) && !cancelling)
       throw new Error(
         "GHL rejected the new time. Choose an available Advisory Call slot within the calendar’s booking rules.",
       );
@@ -168,8 +182,12 @@ export async function rescheduleCallAppointment(record: CallRecord) {
     verified.contactId !== record.ghl_contact_id ||
     verified.locationId !== process.env.GHL_LOCATION_ID ||
     verified.calendarId !== calendarId ||
-    Date.parse(verified.startTime) !== target ||
-    Date.parse(verified.endTime) !== target + duration
+    (cancelling
+      ? verified.appointmentStatus.toLowerCase() !== "cancelled" ||
+        Date.parse(verified.startTime) !== Date.parse(event.startTime) ||
+        Date.parse(verified.endTime) !== Date.parse(event.endTime)
+      : Date.parse(verified.startTime) !== target ||
+        Date.parse(verified.endTime) !== target + duration)
   )
     throw new Error(
       "GHL calendar update could not be verified. Check the appointment or retry sync.",
@@ -178,7 +196,9 @@ export async function rescheduleCallAppointment(record: CallRecord) {
     status: "synced" as const,
     appointmentId: id,
     startTime: verified.startTime,
-    message: "Advisory Call appointment rescheduled in GHL.",
+    message: cancelling
+      ? "Advisory Call appointment cancelled in GHL."
+      : "Advisory Call appointment rescheduled in GHL.",
   };
 }
 export async function syncCallAppointment(record: CallRecord) {

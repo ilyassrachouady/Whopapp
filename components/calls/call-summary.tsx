@@ -266,7 +266,7 @@ export function CallSummary({
                 : "Call saved. GHL notes need a retry."}
             </p>
           )}
-          {attendance === "rescheduled" &&
+          {(attendance === "rescheduled" || attendance === "cancelled") &&
             appointmentSync.status !== "mock" && (
               <p
                 className={
