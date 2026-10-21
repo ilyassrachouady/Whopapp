@@ -6,6 +6,8 @@ import { getSupabase } from "./supabase";
 import type { CallRecord } from "./types";
 
 const FIELD_IDS = {
+  paymentStructure:
+    process.env.GHL_PAYMENT_STRUCTURE_FIELD_ID || "zEhU8JWInYrH6IqUCzDL",
   attendance:
     process.env.GHL_CALL_ATTENDANCE_FIELD_ID || "Rn3fLeiuPVb5aXuNdN8T",
   outcome: process.env.GHL_CALL_OUTCOME_FIELD_ID || "ggCOCEGWg4AuDLhEjrQ0",
@@ -134,6 +136,15 @@ export function callFieldValues(
       : 0;
 
   return [
+    {
+      id: FIELD_IDS.paymentStructure,
+      // Agreed sale structure, independent of whether money has arrived.
+      // Financing is not a separate selection in Payment Desk yet.
+      fieldValue: record.outcome !== "sold" ? "" :
+        record.payment_type === "pif" ? "Pay in Full (PIF)" :
+        record.payment_type === "two" || record.payment_type === "three" || record.payment_type === "custom"
+          ? "Manual Payment Plan" : "",
+    },
     {
       id: FIELD_IDS.attendance,
       fieldValue: attendanceLabels[record.attendance],
