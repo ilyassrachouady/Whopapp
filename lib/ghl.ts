@@ -48,6 +48,15 @@ const opportunitySchema = z
     pipelineStageId: z.string(),
   })
   .passthrough();
+export class MissingGhlContactError extends Error {
+  constructor() { super("This contact no longer exists in GHL."); this.name = "MissingGhlContactError"; }
+}
+export function isMissingContactResponse(path: string, method: string, status: number, body: unknown) {
+  if (method !== "GET" || !/^\/contacts\/[^/?]+$/.test(path)) return false;
+  if (status === 404) return true;
+  const message = body && typeof body === "object" && "message" in body ? body.message : null;
+  return status === 400 && typeof message === "string" && /^Contact not found for id:/i.test(message);
+}
 export async function request(path: string, method = "GET", body?: unknown) {
   if (!process.env.GHL_API_KEY || !process.env.GHL_LOCATION_ID)
     throw new Error(
@@ -64,10 +73,13 @@ export async function request(path: string, method = "GET", body?: unknown) {
     signal: AbortSignal.timeout(15000),
     cache: "no-store",
   });
-  if (!response.ok)
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    if (isMissingContactResponse(path, method, response.status, errorBody)) throw new MissingGhlContactError();
     throw new Error(
       `GHL request failed (${response.status}). Check account permissions and configuration.`,
     );
+  }
   return response.json();
 }
 export async function getContact(id: string) {
@@ -75,7 +87,9 @@ export async function getContact(id: string) {
     return (
       prospects.find((p) => p.id === id || p.ghl_contact_id === id) ?? null
     );
-  const data = await request(`/contacts/${encodeURIComponent(id)}`);
+  let data;
+  try { data = await request(`/contacts/${encodeURIComponent(id)}`); }
+  catch (error) { if (error instanceof MissingGhlContactError) return null; throw error; }
   const contact = contactSchema.parse(data.contact);
   if (contact.locationId !== process.env.GHL_LOCATION_ID)
     throw new Error("Contact belongs to a different GHL account.");

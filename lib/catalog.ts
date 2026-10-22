@@ -31,6 +31,7 @@ export interface Catalog {
   closers: Closer[];
   offers: Offer[];
   mode: "database" | "mock";
+  unavailableContacts?: number;
 }
 export async function getCatalog(
   options: { includeContactOwners?: boolean } = {},
@@ -137,13 +138,15 @@ export async function getCatalog(
     throw new Error(
       "Add prospects with call IDs, closers and active offers before using Payment Desk.",
     );
+  const unavailable = new Set<string>();
   if (options.includeContactOwners && process.env.GHL_MODE === "real") {
     // Bound parallelism for larger CRM lists.
     for (let index = 0; index < prospects.length; index += 5) {
       await Promise.all(
         prospects.slice(index, index + 5).map(async (prospect) => {
           const contact = await getContact(prospect.ghl_contact_id);
-          if (contact && "assignedTo" in contact) {
+          if (!contact) { unavailable.add(prospect.id); return; }
+          if ("assignedTo" in contact) {
             Object.assign(prospect, {
               assigned_ghl_user_id: contact.assignedTo || null,
               closer_id: closers.find(
@@ -157,5 +160,5 @@ export async function getCatalog(
       );
     }
   }
-  return { prospects, closers, offers, mode: "database" };
+  return { prospects: prospects.filter(p => !unavailable.has(p.id)), closers, offers, mode: "database", unavailableContacts: unavailable.size };
 }
