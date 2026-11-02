@@ -27,15 +27,15 @@ test("custom plan keeps deposit separate from contract", () => {
   assert.equal(plan.remaining, 100000);
   assert.deepEqual(plan.installments, [99700, 50000, 50000]);
 });
-test("coaching custom plans use the 2400 installment total and calculate future payments", () => {
+test("coaching custom plans use the 3600 installment total and calculate future payments", () => {
   const plan = calculatePlan(offers[0], "custom", {
     dueToday: 100000,
     remainingPayments: 4,
     futureAmount: 1,
     firstDate: "2099-01-01",
   });
-  assert.equal(plan.contractValue, 240000);
-  assert.deepEqual(plan.installments, [100000, 35000, 35000, 35000, 35000]);
+  assert.equal(plan.contractValue, 360000);
+  assert.deepEqual(plan.installments, [100000, 65000, 65000, 65000, 65000]);
 });
 test("custom future payments absorb leftover cents", () => {
   const plan = calculatePlan(199700, "custom", {
@@ -54,7 +54,7 @@ test("a deposit at or above the contract is rejected", () =>
   assert.throws(
     () =>
       calculatePlan(offers[0], "custom", {
-        dueToday: 240000,
+        dueToday: 360000,
         remainingPayments: 2,
         futureAmount: 1,
         firstDate: "2099-01-01",
@@ -80,4 +80,10 @@ test("past dates and zero payments are rejected", () => {
       firstDate: "2099-01-01",
     }),
   );
+});
+
+test("Sofia uses the new PIF and manual-plan prices", () => {
+ assert.equal(calculatePlan(offers[1], "pif").contractValue,499700);
+ assert.deepEqual(calculatePlan(offers[1], "two").installments,[300000,300000]);
+ assert.deepEqual(calculatePlan(offers[1], "three").installments,[200000,200000,200000]);
 });

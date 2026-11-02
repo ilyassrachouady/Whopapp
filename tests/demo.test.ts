@@ -52,9 +52,9 @@ test("public demo can complete no-sale without generating a checkout", () => {
 
 test("Coaching preset prices propagate to checkout metadata and completed reports", () => {
   for (const [type, total, due, remaining] of [
-    ["pif", 199700, 199700, 0],
-    ["two", 240000, 120000, 120000],
-    ["three", 240000, 80000, 160000],
+    ["pif", 299700, 299700, 0],
+    ["two", 360000, 180000, 180000],
+    ["three", 360000, 120000, 240000],
   ] as const) {
     const plan = calculatePlan(offers[0], type);
     assert.equal(plan.contractValue, total);

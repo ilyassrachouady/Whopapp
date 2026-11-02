@@ -74,9 +74,9 @@ test("isolated PostgreSQL migration enforces sale/deposit payments, replay integ
           amount,
         ])
       ).rows[0].result;
-    assert.deepEqual(await record(sale.id, "pay_first", 120000), {
-      cash_collected: 120000,
-      contract_value: 240000,
+    assert.deepEqual(await record(sale.id, "pay_first", 180000), {
+      cash_collected: 180000,
+      contract_value: 360000,
       duplicate: false,
     });
     assert.equal(
@@ -88,7 +88,7 @@ test("isolated PostgreSQL migration enforces sale/deposit payments, replay integ
       ).rows[0].status,
       "partially_paid",
     );
-    assert.equal((await record(sale.id, "pay_first", 120000)).duplicate, true);
+    assert.equal((await record(sale.id, "pay_first", 180000)).duplicate, true);
     await assert.rejects(
       () => record(sale.id, "pay_first", 80000),
       /Mismatched/,
@@ -97,8 +97,8 @@ test("isolated PostgreSQL migration enforces sale/deposit payments, replay integ
       () => record(deposit.id, "pay_first", 50000),
       /Mismatched/,
     );
-    await record(sale.id, "pay_second", 120000);
-    await assert.rejects(() => record(sale.id, "pay_third", 120000), /exceeds/);
+    await record(sale.id, "pay_second", 180000);
+    await assert.rejects(() => record(sale.id, "pay_third", 180000), /exceeds/);
     await record(deposit.id, "pay_deposit", 50000);
     const p = (
       await db.query<{

@@ -123,7 +123,7 @@ test("confirmed payments persist, separate deposits, onboard first installments,
             type: "payment.succeeded",
             checkout_session_id: webhookSale.id,
             whop_payment_id: "pay_route",
-            amount_collected: 199700,
+            amount_collected: 299700,
           };
           const request = (secret: string, body = payload) =>
             new Request("https://desk.example.com/api/webhooks/whop", {
@@ -200,9 +200,9 @@ test("confirmed payments persist, separate deposits, onboard first installments,
           id: "evt_pif",
           checkout_session_id: sale.id,
           whop_payment_id: "pay_pif",
-          amount_collected: 199700,
+          amount_collected: 299700,
         });
-        assert.equal(result.payment.total, 199700);
+        assert.equal(result.payment.total, 299700);
         assert.equal(result.payment.duplicate, false);
         assert.ok(
           "customer" in result.downstream && result.downstream.customer,
@@ -229,17 +229,17 @@ test("confirmed payments persist, separate deposits, onboard first installments,
           id: "evt_two",
           checkout_session_id: two.id,
           whop_payment_id: "pay_two_1",
-          amount_collected: 120000,
+          amount_collected: 180000,
         });
-        assert.equal(first.payment.total, 120000);
+        assert.equal(first.payment.total, 180000);
         assert.ok("customer" in first.downstream && first.downstream.customer);
         const second = await processMockPayment({
           id: "evt_two_2",
           checkout_session_id: two.id,
           whop_payment_id: "pay_two_2",
-          amount_collected: 120000,
+          amount_collected: 180000,
         });
-        assert.equal(second.payment.total, 240000);
+        assert.equal(second.payment.total, 360000);
         const actions = await readdir(
           path.join(directory, ".data", "payment-processing"),
         );
@@ -318,17 +318,17 @@ test("confirmed payments persist, separate deposits, onboard first installments,
           id: "evt_retry",
           checkout_session_id: sale.id,
           whop_payment_id: "pay_pif",
-          amount_collected: 199700,
+          amount_collected: 299700,
         });
         assert.equal(repeat.payment.duplicate, true);
-        assert.equal(repeat.payment.total, 199700);
+        assert.equal(repeat.payment.total, 299700);
         await assert.rejects(
           () =>
             processMockPayment({
               id: "evt_wrong",
               checkout_session_id: two.id,
               whop_payment_id: "pay_pif",
-              amount_collected: 120000,
+              amount_collected: 180000,
             }),
           /replay/,
         );
@@ -348,7 +348,7 @@ test("confirmed payments persist, separate deposits, onboard first installments,
               id: "evt_overpay",
               checkout_session_id: two.id,
               whop_payment_id: "pay_two_3",
-              amount_collected: 120000,
+              amount_collected: 180000,
             }),
           /exceeds/,
         );
@@ -387,7 +387,7 @@ test("confirmed payments persist, separate deposits, onboard first installments,
         const input = {
           checkout_session_id: retrySale.id,
           whop_payment_id: "pay_retry",
-          amount_collected: 199700,
+          amount_collected: 299700,
           paid_at: new Date().toISOString(),
         };
         await assert.rejects(

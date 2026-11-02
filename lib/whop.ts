@@ -156,7 +156,7 @@ async function findExistingOfferPlan(
   offer: Offer,
   payment: PaymentPlan,
 ) {
-  if (!offer.whopProductPath) return null;
+  if (!offer.whopProductPath && !offer.whopProductId) return null;
   const candidates = await listOfferPlans(client, offer);
 
   for (const candidate of candidates) {
@@ -317,7 +317,7 @@ export async function createCheckout(input: {
   let planId: string | null = null;
   if (input.payment.type === "custom") {
     planId = await createCustomPlan(client, input);
-  } else if (input.offer.whopProductPath) {
+  } else if (input.offer.whopProductPath || input.offer.whopProductId) {
     planId = await findExistingOfferPlan(client, input.offer, input.payment);
     if (!planId) planId = await createStandardOfferPlan(client, input);
   } else {
